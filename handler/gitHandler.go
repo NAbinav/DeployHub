@@ -3,9 +3,8 @@ package handler
 import (
 	"deployhub/cmd"
 	"fmt"
-	"strings"
-
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 func CloneHandler(c *gin.Context) {
@@ -14,14 +13,8 @@ func CloneHandler(c *gin.Context) {
 		c.String(400, "URL parameter is required")
 		return
 	}
-	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "git@") {
-		c.String(400, "Invalid URL")
-		return
-	}
-	c.Writer.Header().Set("Content-Type", "text/plain")
-	c.Writer.Header().Set("Transfer-Encoding", "chunked")
-	c.Writer.Flush()
-	err := cmd.CloneRepo(url)
+	var TempFolderName = uuid.NewString()
+	err := cmd.CloneRepo(url, TempFolderName)
 	if err != nil {
 		fmt.Fprintf(c.Writer, "\nClone failed: %v\n", err)
 	} else {

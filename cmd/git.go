@@ -1,25 +1,23 @@
 package cmd
 
 import (
-	"bytes"
 	"fmt"
-	"io"
+	"github.com/go-git/go-git/v5"
 	"log"
 	"os"
-	"os/exec"
 )
 
-func CloneRepo(url string) error {
-	cmd := exec.Command("git", "clone", url)
-	var stdoutBuf, stderrBuf bytes.Buffer
-	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
-	cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
+func CloneRepo(url string, name string) error {
+	_, err := git.PlainClone("/tmp/"+name, false, &git.CloneOptions{
+		URL:      url,
+		Progress: os.Stdout,
+	})
 
-	err := cmd.Run()
 	if err != nil {
-		log.Fatalf("cmd.Run() failed with %s\n", err)
+		fmt.Println(err)
+		log.Fatalf("ERR: %s", err)
 	}
-	outStr, errStr := string(stdoutBuf.Bytes()), string(stderrBuf.Bytes())
-	fmt.Printf("\nout:\n%s\nerr:\n%s\n", outStr, errStr)
 	return nil
 }
+
+func Pack(u)

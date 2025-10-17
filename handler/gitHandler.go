@@ -9,6 +9,7 @@ import (
 
 func CloneHandler(c *gin.Context) {
 	url := c.Query("url")
+	fmt.Println(c.Request.Host)
 	if url == "" {
 		c.String(400, "URL parameter is required")
 		return

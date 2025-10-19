@@ -3,19 +3,20 @@ package cmd
 import (
 	"fmt"
 	"github.com/go-git/go-git/v5"
-	"log"
 	"os"
+	"path/filepath"
 )
 
 func CloneRepo(url string, name string) error {
-	_, err := git.PlainClone("/tmp/"+name, false, &git.CloneOptions{
+	targetPath := filepath.Join("/tmp", name)
+	fmt.Printf("📦 Cloning repository: %s → %s\n", url, targetPath)
+	_, err := git.PlainClone(targetPath, false, &git.CloneOptions{
 		URL:      url,
 		Progress: os.Stdout,
 	})
-
 	if err != nil {
-		fmt.Println(err)
-		log.Fatalf("ERR: %s", err)
+		return fmt.Errorf("failed to clone repository: %w", err)
 	}
+	fmt.Println("✅ Clone completed successfully!")
 	return nil
 }

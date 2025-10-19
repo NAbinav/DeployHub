@@ -74,7 +74,7 @@ EXPOSE 8080
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]`
 
 	case "go":
-		dockerfile = `FROM golang:1.21-alpine AS builder
+		dockerfile = `FROM golang:1.25-alpine AS builder
 WORKDIR /app
 COPY go.* ./
 RUN go mod download

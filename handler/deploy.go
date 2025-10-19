@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 type DeployRequest struct {
-	GitURL      string `json:"git_url"`
-	ServiceName string `json:"name"`
+	GitURL      string            `json:"git_url"`
+	ServiceName string            `json:"name"`
+	Env         map[string]string `json:"env"`
 }
 
 type DeployResponse struct {
@@ -82,14 +84,10 @@ func DeployHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := utils.RunCommand("gcloud", "run", "deploy", req.ServiceName,
-		"--image", repoPath,
-		"--platform", "managed",
-		"--region", region,
-		"--allow-unauthenticated",
-		"--port", "8080",
-		"--timeout", "300s",
-		"--memory", "512Mi"); err != nil {
+	env_string := utils.ENVString(req.Env)
+	fmt.Println(env_string)
+	deploy_cmd := fmt.Sprintf("gcloud run deploy %s --image %s --platform managed --region %s --allow-unauthenticated --timeout 300s --memory 512M --set-env-vars %s", req.ServiceName, repoPath, region, env_string)
+	if err := utils.RunCommandArray(strings.Split(deploy_cmd, " ")); err != nil {
 		json.NewEncoder(w).Encode(DeployResponse{Error: err.Error()})
 		return
 	}

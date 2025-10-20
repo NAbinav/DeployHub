@@ -10,6 +10,11 @@ import (
 )
 
 func GetWebsite(w http.ResponseWriter, r *http.Request) {
+	if r.Host == "localhost:8080" || r.Host == "yourmaindomain.com" {
+		http.NotFound(w, r) // let main server handle /login, /callback, etc.
+		return
+	}
+
 	projectName := strings.Split(r.Host, ".")[0]
 	targetURL := "https://" + projectName + "-" + os.Getenv("GCLOUD_PROJECT_NUMBER") + ".asia-south1.run.app"
 	target, err := url.Parse(targetURL)

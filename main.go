@@ -1,15 +1,30 @@
 package main
 
 import (
+	"deployhub/auth"
 	"deployhub/handler"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/github"
 )
 
 func main() {
-	http.HandleFunc("/", handler.GetWebsite)
-	http.HandleFunc("/deploy", handler.DeployHandler)
+	client := auth.Client{}
+	client.Config = &oauth2.Config{
+		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
+		ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+		RedirectURL:  "http://localhost:8080/callback",
+		Endpoint:     github.Endpoint,
+	}
+
+	http.HandleFunc("GET /", handler.GetWebsite)
+	http.HandleFunc("POST /", handler.DeployHandler)
+	http.HandleFunc("GET /login", client.LoginHandler)
+	http.HandleFunc("GET /callback", client.CallbackHandler)
 
 	server := &http.Server{
 		Addr: ":8080",

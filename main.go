@@ -2,17 +2,22 @@ package main
 
 import (
 	"deployhub/auth"
+	"deployhub/db"
 	"deployhub/handler"
 	"fmt"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/github"
 	"log"
 	"net/http"
 	"os"
-
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/github"
 )
 
 func main() {
+	err := db.Init_db()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	client := auth.Client{}
 	client.Config = &oauth2.Config{
 		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),

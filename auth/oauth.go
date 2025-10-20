@@ -17,6 +17,14 @@ type Client struct {
 func (c *Client) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	token, err := c.Config.Exchange(context.Background(), code)
+	req, _ := http.NewRequest("GET", "https://api.github.com/user/repos", nil)
+	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	// defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(body))
+
 	if err != nil {
 		fmt.Println(err)
 		return

@@ -18,7 +18,9 @@ func main() {
 		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
 		ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
 		RedirectURL:  "http://localhost:8080/callback",
-		Endpoint:     github.Endpoint,
+		Scopes:       []string{"repo"},
+
+		Endpoint: github.Endpoint,
 	}
 
 	http.HandleFunc("GET /", handler.GetWebsite)

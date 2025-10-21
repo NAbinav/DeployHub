@@ -37,7 +37,7 @@ func (c *Client) CallbackHandler(w http.ResponseWriter, r *http.Request, ctx *gi
 		fmt.Println(err)
 		return err
 	}
-	ctx.SetCookie("token", jwt_token, 7200, "/", "localhost", false, true)
+	ctx.SetCookie("token", jwt_token, 7200, "/", "brogramiz.info", true, true)
 	fmt.Println(err)
 	http.Redirect(w, r, "/", 307)
 	return nil

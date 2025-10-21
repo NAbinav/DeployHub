@@ -94,7 +94,7 @@ func DeployHandler(c *gin.Context) {
 	os.Chdir("/tmp")
 	_ = os.RemoveAll(tempDir)
 	_ = utils.RunCommand("docker", "rmi", imageName)
-	serviceURL := fmt.Sprintf("https://%s-%s.a.run.app", req.ServiceName, region)
+	serviceURL := fmt.Sprintf("https://%s.brogramiz.info", req.ServiceName)
 	c.JSON(200, DeployResponse{URL: serviceURL})
 
 }

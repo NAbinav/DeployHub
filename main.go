@@ -23,7 +23,7 @@ func main() {
 	client.Config = &oauth2.Config{
 		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
 		ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
-		RedirectURL:  "http://localhost:8080/callback",
+		RedirectURL:  os.Getenv("CALLBACK_URL"),
 		Scopes:       []string{"repo"},
 		Endpoint:     github.Endpoint,
 	}
@@ -31,7 +31,7 @@ func main() {
 	r := gin.Default()
 
 	r.GET("/login", func(c *gin.Context) {
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "domain.com" {
+		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
 			client.LoginHandler(c.Writer, c.Request)
 		} else {
 			handler.GetWebsite(c)
@@ -39,7 +39,7 @@ func main() {
 	})
 
 	r.GET("/signup", func(c *gin.Context) {
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "domain.com" {
+		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
 			client.LoginHandler(c.Writer, c.Request)
 		} else {
 			handler.GetWebsite(c)
@@ -47,7 +47,7 @@ func main() {
 	})
 
 	r.GET("/callback", func(c *gin.Context) {
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "domain.com" {
+		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
 			client.CallbackHandler(c.Writer, c.Request, c)
 		} else {
 			handler.GetWebsite(c)
@@ -55,7 +55,8 @@ func main() {
 	})
 
 	r.POST("/", func(c *gin.Context) {
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "domain.com" {
+		fmt.Println(c.Request.Host)
+		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
 			handler.DeployHandler(c)
 		} else {
 			handler.GetWebsite(c)
@@ -65,7 +66,7 @@ func main() {
 	r.GET("/repo", handler.RepoName)
 	r.GET("/:id", func(c *gin.Context) {
 		fmt.Println(c.Request.Host)
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "domain.com" {
+		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
 			handler.DeployIDHandler(c)
 		} else {
 			handler.GetWebsite(c)

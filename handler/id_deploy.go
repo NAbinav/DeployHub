@@ -107,11 +107,10 @@ func DeployIDHandler(c *gin.Context) {
 		c.String(400, out)
 		return
 	}
-
 	os.Chdir("/tmp")
 	_ = os.RemoveAll(tempDir)
 	_ = utils.RunCommand("docker", "rmi", imageName)
-	serviceURL := fmt.Sprintf("https://%s-%s.a.run.app", repo, region)
+	serviceURL := fmt.Sprintf("https://%s.brogramiz.info", repo)
 	c.JSON(200, DeployResponse{URL: serviceURL})
 
 }

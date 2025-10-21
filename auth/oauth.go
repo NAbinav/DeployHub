@@ -23,7 +23,8 @@ func (c *Client) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	resp, err := http.DefaultClient.Do(req)
 	// defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	fmt.Println(string(body))
+	// fmt.Println(string(body))
+	fmt.Println(string(body[0]))
 
 	if err != nil {
 		fmt.Println(err)

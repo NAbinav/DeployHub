@@ -7,24 +7,27 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
-func GetWebsite(w http.ResponseWriter, r *http.Request) {
-	if r.Host == "localhost:8080" || r.Host == "yourmaindomain.com" {
-		http.NotFound(w, r) // let main server handle /login, /callback, etc.
+func GetWebsite(c *gin.Context) {
+	if c.Request.Host == "localhost:8080" || c.Request.Host == "domain.com" {
+
+		http.NotFound(c.Writer, c.Request)
 		return
 	}
 
-	projectName := strings.Split(r.Host, ".")[0]
+	projectName := strings.Split(c.Request.Host, ".")[0]
 	targetURL := "https://" + projectName + "-" + os.Getenv("GCLOUD_PROJECT_NUMBER") + ".asia-south1.run.app"
 	target, err := url.Parse(targetURL)
 	if err != nil {
-		http.Error(w, "Bad target URL", http.StatusInternalServerError)
+		c.Error(fmt.Errorf("not found"))
 		fmt.Println("URL parse error:", err)
 		return
 	}
 	proxy := httputil.NewSingleHostReverseProxy(target)
-	r.Host = target.Host
+	c.Request.Host = target.Host
 	fmt.Println("Proxying request to:", targetURL)
-	proxy.ServeHTTP(w, r)
+	proxy.ServeHTTP(c.Writer, c.Request)
 }

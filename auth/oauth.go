@@ -2,40 +2,45 @@ package auth
 
 import (
 	"context"
+	"deployhub/db"
+	"deployhub/helper"
+	"deployhub/jwt"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	"golang.org/x/oauth2"
 	"io"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"golang.org/x/oauth2"
 )
 
 type Client struct {
 	Config *oauth2.Config
 }
 
-func (c *Client) CallbackHandler(w http.ResponseWriter, r *http.Request) {
+func (c *Client) CallbackHandler(w http.ResponseWriter, r *http.Request, ctx *gin.Context) error {
 	code := r.URL.Query().Get("code")
 	token, err := c.Config.Exchange(context.Background(), code)
-	req, _ := http.NewRequest("GET", "https://api.github.com/user/repos", nil)
-	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
-
-	resp, err := http.DefaultClient.Do(req)
-	// defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	// fmt.Println(string(body))
-	fmt.Println(string(body[0]))
-
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 	client := c.Config.Client(context.Background(), token)
 	response, err := client.Get("https://api.github.com/user")
 	output, _ := io.ReadAll(response.Body)
 	client_json := make(map[string]any)
 	json.Unmarshal(output, &client_json)
-	fmt.Println(client_json)
+	tokenString, err := helper.TokenToString(token)
+	if err != nil {
+		return err
+	}
+	err = db.SignUp(client_json["login"], tokenString, client_json["avatar_url"])
+	jwt_token, err := jwt.Create_JWT(client_json["login"].(string))
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	ctx.SetCookie("token", jwt_token, 7200, "/", "localhost", false, true)
+	fmt.Println(err)
+	http.Redirect(w, r, "/", 307)
+	return nil
 
 }
 func (c *Client) LoginHandler(w http.ResponseWriter, r *http.Request) {

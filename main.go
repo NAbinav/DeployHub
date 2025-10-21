@@ -48,7 +48,7 @@ func main() {
 
 	r.GET("/callback", func(c *gin.Context) {
 		if c.Request.Host == "localhost:8080" || c.Request.Host == "domain.com" {
-			client.CallbackHandler(c.Writer, c.Request)
+			client.CallbackHandler(c.Writer, c.Request, c)
 		} else {
 			handler.GetWebsite(c)
 		}
@@ -62,6 +62,14 @@ func main() {
 		}
 	})
 
+	r.GET("/repo", handler.RepoName)
+	r.GET("/:id", func(c *gin.Context) {
+		if c.Request.Host == "localhost:8080" || c.Request.Host == "domain.com" {
+			client.CallbackHandler(c.Writer, c.Request, c)
+		} else {
+			handler.GetWebsite(c)
+		}
+	})
 	r.NoRoute(func(c *gin.Context) {
 		handler.GetWebsite(c)
 	})

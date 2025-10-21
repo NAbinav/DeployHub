@@ -15,5 +15,5 @@ func Verify_JWT(token_string string) (string, error) {
 	if !token.Valid {
 		return "", fmt.Errorf("Invalid Token")
 	}
-	return (token.Claims.(jwt.MapClaims))["email_id"].(string), nil
+	return (token.Claims.(jwt.MapClaims))["username"].(string), nil
 }

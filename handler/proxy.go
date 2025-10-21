@@ -13,8 +13,12 @@ import (
 
 func GetWebsite(c *gin.Context) {
 	if c.Request.Host == "localhost:8080" || c.Request.Host == "domain.com" {
-
-		http.NotFound(c.Writer, c.Request)
+		_, err := c.Cookie("token")
+		if err != nil {
+			http.Redirect(c.Writer, c.Request, "/login", 307)
+		} else {
+			RepoName(c)
+		}
 		return
 	}
 

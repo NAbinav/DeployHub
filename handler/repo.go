@@ -41,6 +41,6 @@ func RepoName(c *gin.Context) {
 			public_repo = append(public_repo, repo_name[len(repo_name)-1])
 		}
 	}
-	c.String(200, (fmt.Sprintf("public: %v \nprivate: %v", public_repo, private_repo)))
+	c.String(200, (fmt.Sprintf("public: %v \nprivate: %v\n\nTO START DEPLOY YOUR PROJECT GO TO /<PROJECT_NAME>", public_repo, private_repo)))
 	fmt.Println(private_repo, public_repo)
 }

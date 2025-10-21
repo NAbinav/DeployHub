@@ -64,8 +64,9 @@ func main() {
 
 	r.GET("/repo", handler.RepoName)
 	r.GET("/:id", func(c *gin.Context) {
+		fmt.Println(c.Request.Host)
 		if c.Request.Host == "localhost:8080" || c.Request.Host == "domain.com" {
-			client.CallbackHandler(c.Writer, c.Request, c)
+			handler.DeployIDHandler(c)
 		} else {
 			handler.GetWebsite(c)
 		}

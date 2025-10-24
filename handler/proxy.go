@@ -14,7 +14,8 @@ import (
 func GetWebsite(c *gin.Context) {
 	fmt.Println(c.Request.Host)
 	if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
-		_, err := c.Cookie("token")
+		t, err := c.Cookie("token")
+		fmt.Println(t)
 		if err != nil {
 			http.Redirect(c.Writer, c.Request, "/login", 307)
 		} else {

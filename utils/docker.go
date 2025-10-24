@@ -41,6 +41,16 @@ ENV PORT=8080
 EXPOSE 8080
 CMD ["serve", "-s", "dist", "-l", "8080"]`, buildDir)
 
+	case "express":
+		dockerfile = `FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci --legacy-peer-deps; else npm install --legacy-peer-deps; fi
+COPY . .
+ENV PORT=8080
+EXPOSE 8080
+CMD ["node", "index.js"]
+`
 	case "node":
 		dockerfile = `FROM node:20-alpine
 WORKDIR /app

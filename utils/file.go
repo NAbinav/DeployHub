@@ -24,6 +24,10 @@ func DetectFramework(projectPath string) string {
 		if strings.Contains(str, "react") {
 			return "react"
 		}
+		if strings.Contains(str, "express") {
+			return "express"
+		}
+
 		return "node"
 	}
 	if fileExists(filepath.Join(projectPath, "requirements.txt")) {

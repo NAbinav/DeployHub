@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"deployhub/db"
+	"deployhub/helper"
+	"deployhub/jwt"
 	"deployhub/utils"
 	"errors"
 	"fmt"
@@ -34,9 +37,23 @@ func DeployHandler(c *gin.Context) {
 		c.Error(errors.New("PROJECT_ID environment variable not set"))
 		return
 	}
+	token, err := c.Cookie("token")
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	user, err := jwt.Verify_JWT(token)
+	access_token, err := db.UserToken(user, c.Request.Context())
+	map_token, err := helper.StringToToken(access_token)
+	git_url := "https://" + map_token["access_token"].(string) + "@github.com/" + user + "/" + req.GitURL
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	git_clean_url := "https://www.github.com/" + user + "/" + req.GitURL
 
 	tempDir := filepath.Join("/tmp", fmt.Sprintf("repo-%d", time.Now().UnixNano()))
-	if err := utils.RunCommand("git", "clone", req.GitURL, tempDir); err != nil {
+	if err := utils.RunCommand("git", "clone", git_url, tempDir); err != nil {
 		c.Error(err)
 		return
 	}
@@ -95,6 +112,10 @@ func DeployHandler(c *gin.Context) {
 	_ = os.RemoveAll(tempDir)
 	_ = utils.RunCommand("docker", "rmi", imageName)
 	serviceURL := fmt.Sprintf("https://%s.brogramiz.info", req.ServiceName)
+	err = db.AddProject(c, req.ServiceName, user, git_clean_url, serviceURL, framework)
+	if err != nil {
+		c.Error(err)
+	}
 	c.JSON(200, DeployResponse{URL: serviceURL})
 
 }

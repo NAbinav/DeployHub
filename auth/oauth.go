@@ -38,8 +38,12 @@ func (c *Client) CallbackHandler(w http.ResponseWriter, r *http.Request, ctx *gi
 		return err
 	}
 	ctx.SetCookie("token", jwt_token, 7200, "/", "brogramiz.info", true, true)
-	fmt.Println(err)
-	http.Redirect(w, r, "/", 307)
+	// ctx.JSON(http.StatusOK, gin.H{
+	// 	"status":   "success",
+	// 	"redirect": "http://localhost:5173",
+	// })
+	ctx.Redirect(307, "/")
+
 	return nil
 
 }

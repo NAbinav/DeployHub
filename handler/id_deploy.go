@@ -44,6 +44,7 @@ func DeployIDHandler(c *gin.Context) {
 		c.String(400, err.Error())
 		return
 	}
+	repo = strings.ReplaceAll(repo, ".", "-")
 
 	framework := utils.DetectFramework(tempDir)
 	fmt.Println("🔍 Detected framework:", framework)
@@ -111,6 +112,11 @@ func DeployIDHandler(c *gin.Context) {
 	_ = os.RemoveAll(tempDir)
 	_ = utils.RunCommand("docker", "rmi", imageName)
 	serviceURL := fmt.Sprintf("https://%s.brogramiz.info", repo)
+	fmt.Println(repo, username, git_url, serviceURL, framework)
+	err = db.AddProject(c, repo, username, git_url, serviceURL, framework)
+	if err != nil {
+		c.Error(err)
+	}
 	c.JSON(200, DeployResponse{URL: serviceURL})
 
 }

@@ -1,6 +1,9 @@
 package db
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 type Project struct {
 	Project_name string `json:"project_name"`
@@ -10,26 +13,34 @@ type Project struct {
 	Framework    string `json:"framework"`
 }
 
-func AddProject(ctx context.Context, project_name string, user string, git_url string, project_url string, framework string) error {
-	query := "insert into projects (pname,username,git_url,project_url,framework) values ($1,$2,$3,$4,$5)"
-	_, err := DB.Exec(ctx, query, project_name, user, git_url, project_url, framework)
-	return err
+func AddProject(ctx context.Context, username, gitURL, projectURL, framework, projectName string) error {
+	query := `
+        INSERT INTO projects (username, git_url, project_url, framework, pname)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(pname) DO UPDATE SET
+            git_url = excluded.git_url,
+            project_url = excluded.project_url,
+            framework = excluded.framework,
+            pname = excluded.pname;
+    `
+	_, err := ExecuteQuery(ctx, query, username, gitURL, projectURL, framework, projectName)
+	if err != nil {
+		return fmt.Errorf("failed to save project: %w", err)
+	}
+
+	return nil
+
 }
 
-func GetUserProject(ctx context.Context, username string) ([]Project, error) {
-	var AllProject []Project
-	query := "select pname,username,git_url,project_url,framework  from projects where username=$1"
-	rows, err := DB.Query(ctx, query, username)
+func GetUserProject(ctx context.Context, username string) ([]map[string]any, error) {
+	query := `
+		SELECT username, git_url, project_url, framework,pname
+		FROM projects
+		WHERE username = ?
+	`
+	projects, err := ExecuteQueryMultiple(ctx, query, username)
 	if err != nil {
-		return []Project{}, err
+		return nil, fmt.Errorf("failed to get projects: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var project Project
-		if err := rows.Scan(&project.Project_name, &project.User, &project.Git_url, &project.Project_url, &project.Framework); err != nil {
-			return []Project{}, err
-		}
-		AllProject = append(AllProject, project)
-	}
-	return AllProject, nil
+	return projects, nil
 }

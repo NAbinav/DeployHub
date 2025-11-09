@@ -26,7 +26,7 @@ func RepoName(c *gin.Context) {
 		c.JSON(400, err)
 	}
 	fmt.Println(username)
-	token, err := db.UserToken(username, c)
+	token, err := db.UserToken(c, username)
 	if err != nil {
 		c.JSON(400, err)
 	}

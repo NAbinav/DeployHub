@@ -6,16 +6,17 @@ import (
 	"deployhub/handler"
 	"deployhub/jwt"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/github"
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/gin-gonic/gin"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/github"
 )
 
 func main() {
-	err := db.Init_db()
+	err := db.Init_Cloudflare()
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -30,7 +31,6 @@ func main() {
 	}
 	r := gin.Default()
 
-	// Just add /api prefix to these routes
 	r.GET("/api/login", func(c *gin.Context) {
 		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
 			client.LoginHandler(c.Writer, c.Request)
@@ -77,7 +77,7 @@ func main() {
 	})
 	r.GET("/api/check", func(c *gin.Context) {
 		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
-			token, err := c.Cookie("token") // get cookie
+			token, err := c.Cookie("token")
 			if err != nil {
 				c.JSON(http.StatusUnauthorized, gin.H{"status": "no token"})
 				return
@@ -96,6 +96,13 @@ func main() {
 		fmt.Println(c.Request.Host)
 		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
 			handler.GetProject(c)
+		} else {
+			handler.GetWebsite(c)
+		}
+	})
+	r.DELETE("/api/projects", func(c *gin.Context) {
+		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
+			handler.DeleteService(c)
 		} else {
 			handler.GetWebsite(c)
 		}

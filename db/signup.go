@@ -2,17 +2,24 @@ package db
 
 import (
 	"context"
-
+	"fmt"
 	"github.com/google/uuid"
 )
 
-func SignUp(username any, token string, pfp_url any) error {
+func SignUp(ctx context.Context, username, token, pfpURL string) error {
 	id := uuid.NewString()
-	query := `INSERT INTO users (id,username, token, pfp_link) SELECT $1, $2, $3,$4
-	WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = $2);`
-	_, err := DB.Exec(context.Background(), query, id, username, token, pfp_url)
+	query := `
+		INSERT INTO users (id, username, token, pfp_link)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(username) DO UPDATE SET
+			token = excluded.token,
+			pfp_link = excluded.pfp_link;    `
+	_, err := ExecuteQuery(ctx, query, id, username, token, pfpURL)
+
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to upsert user: %w", err)
 	}
+
 	return nil
+
 }

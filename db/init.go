@@ -2,29 +2,19 @@ package db
 
 import (
 	"context"
-	"fmt"
 	"os"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/cloudflare/cloudflare-go/v3"
+	"github.com/cloudflare/cloudflare-go/v3/d1"
+	"github.com/cloudflare/cloudflare-go/v3/option"
 )
 
-var DB *pgxpool.Pool
+var Client *cloudflare.Client
 
-func Init_db() error {
-	conn_str := os.Getenv("DATABASE_URL")
-	config, err := pgxpool.ParseConfig(conn_str)
-	if err != nil {
-		return err
-	}
-	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
-
-	DB, err = pgxpool.NewWithConfig(context.Background(), config)
-	if err := DB.Ping(context.Background()); err != nil {
-		return fmt.Errorf("error pinging db: %w", err)
-	}
-
-	fmt.Println("✅ Database connected successfully")
-
-	return nil
+func Init_Cloudflare() error {
+	Client = cloudflare.NewClient(option.WithAPIKey(os.Getenv("CLOUDFLARE_API_TOKEN")))
+	_, err := Client.D1.Database.List(context.TODO(), d1.DatabaseListParams{
+		AccountID: cloudflare.F(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
+	})
+	return err
 }

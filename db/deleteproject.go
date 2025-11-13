@@ -35,3 +35,8 @@ func UpdateProjectName(ctx context.Context, oldPname, newPname string) error {
 
 	return nil
 }
+func DeleteProject(ctx context.Context, name string) error {
+	deleteQuery := "DELETE FROM projects WHERE pname = ?;"
+	_, err := ExecuteQuery(ctx, deleteQuery, name)
+	return err
+}

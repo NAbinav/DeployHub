@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"deployhub/db"
 	"deployhub/helper"
 	"fmt"
 
@@ -14,6 +15,10 @@ func DeleteService(c *gin.Context) {
 		fmt.Println(err)
 		c.Error(err)
 		return
+	}
+	err = db.DeleteProject(c, name)
+	if err != nil {
+		c.JSON(400, err)
 	}
 	c.JSON(200, struct{ status string }{status: "sucess delete"})
 }

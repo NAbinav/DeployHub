@@ -6,14 +6,29 @@ import (
 	"deployhub/handler"
 	"deployhub/jwt"
 	"fmt"
-	"log"
-	"net/http"
-	"os"
-
 	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
+	"log"
+	"net/http"
+	"os"
 )
+
+func allowedHostsMiddleware(allowedHosts ...string) gin.HandlerFunc {
+	hostsMap := make(map[string]bool)
+	for _, host := range allowedHosts {
+		hostsMap[host] = true
+	}
+
+	return func(c *gin.Context) {
+		if !hostsMap[c.Request.Host] {
+			handler.GetWebsite(c)
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
 
 func main() {
 	err := db.Init_Cloudflare()
@@ -21,6 +36,7 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+
 	client := auth.Client{}
 	client.Config = &oauth2.Config{
 		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
@@ -29,54 +45,31 @@ func main() {
 		Scopes:       []string{"repo"},
 		Endpoint:     github.Endpoint,
 	}
+
 	r := gin.Default()
 
-	r.GET("/api/login", func(c *gin.Context) {
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
+	// Apply middleware to API routes group
+	api := r.Group("/api", allowedHostsMiddleware("localhost:8080", "brogramiz.info"))
+	{
+		api.GET("/login", func(c *gin.Context) {
 			client.LoginHandler(c.Writer, c.Request)
-		} else {
-			handler.GetWebsite(c)
-		}
-	})
-	r.GET("/api/signup", func(c *gin.Context) {
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
+		})
+
+		api.GET("/signup", func(c *gin.Context) {
 			client.LoginHandler(c.Writer, c.Request)
-		} else {
-			handler.GetWebsite(c)
-		}
-	})
-	r.GET("/api/callback", func(c *gin.Context) {
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
+		})
+
+		api.GET("/callback", func(c *gin.Context) {
 			client.CallbackHandler(c.Writer, c.Request, c)
-		} else {
-			handler.GetWebsite(c)
-		}
-	})
-	r.POST("/api/deploy/", func(c *gin.Context) { // Changed from "/"
-		fmt.Println(c.Request.Host)
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
-			handler.DeployHandler(c)
-		} else {
-			handler.GetWebsite(c)
-		}
-	})
-	r.GET("/api/repo", func(c *gin.Context) {
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
-			handler.RepoName(c)
-		} else {
-			handler.GetWebsite(c)
-		}
-	})
-	r.GET("/api/deploy/:id", func(c *gin.Context) { // Changed from "/:id"
-		fmt.Println(c.Request.Host)
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
-			handler.DeployIDHandler(c)
-		} else {
-			handler.GetWebsite(c)
-		}
-	})
-	r.GET("/api/check", func(c *gin.Context) {
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
+		})
+
+		api.POST("/deploy/", handler.DeployHandler)
+
+		api.GET("/repo", handler.RepoName)
+
+		api.GET("/deploy/:id", handler.DeployIDHandler)
+
+		api.GET("/check", func(c *gin.Context) {
 			token, err := c.Cookie("token")
 			if err != nil {
 				c.JSON(http.StatusUnauthorized, gin.H{"status": "no token"})
@@ -88,28 +81,17 @@ func main() {
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"status": "success", "user": username})
-		} else {
-			handler.GetWebsite(c)
-		}
-	})
-	r.GET("/api/projects", func(c *gin.Context) {
-		fmt.Println(c.Request.Host)
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
-			handler.GetProject(c)
-		} else {
-			handler.GetWebsite(c)
-		}
-	})
-	r.DELETE("/api/projects", func(c *gin.Context) {
-		if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
-			handler.DeleteService(c)
-		} else {
-			handler.GetWebsite(c)
-		}
-	})
+		})
+
+		api.GET("/projects", handler.GetProject)
+
+		api.DELETE("/projects", handler.DeleteService)
+	}
+
 	r.NoRoute(func(c *gin.Context) {
 		handler.GetWebsite(c)
 	})
+
 	fmt.Println("running on :8080")
 	log.Fatal(r.Run(":8080"))
 }

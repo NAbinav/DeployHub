@@ -8,12 +8,21 @@ import (
 )
 
 func RunCommandWithOutput(name string, args []string, output io.Writer) error {
-	fmt.Fprintf(output, "🛠 Running: %s %v\n", name, args)
+	if output != nil {
+		fmt.Fprintf(output, "🛠 Running: %s %v\n", name, args)
+	}
+
 	cmd := exec.Command(name, args...)
+
+	if output == nil {
+		return cmd.Run()
+	}
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to get stdout pipe: %v", err)
 	}
+
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("failed to get stderr pipe: %v", err)
@@ -32,14 +41,17 @@ func RunCommandWithOutput(name string, args []string, output io.Writer) error {
 			fmt.Fprintln(multi, scannerOut.Text())
 		}
 	}()
+
 	go func() {
 		for scannerErr.Scan() {
 			fmt.Fprintln(multi, scannerErr.Text())
 		}
 	}()
+
 	err = cmd.Wait()
 	if err != nil {
 		return fmt.Errorf("command failed: %v", err)
 	}
+
 	return nil
 }

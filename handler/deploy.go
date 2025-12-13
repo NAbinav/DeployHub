@@ -5,7 +5,6 @@ import (
 	"deployhub/db"
 	// "deployhub/helper"
 	"deployhub/jwt"
-	"deployhub/log"
 	"deployhub/utils"
 	"errors"
 	"fmt"
@@ -47,32 +46,8 @@ func DeployHandler(c *gin.Context) {
 	// Generate unique deployment ID
 	deploymentID := uuid.New().String()
 
-	// Set up SSE stream
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.SSEvent("message", "Deployment started for "+req.ServiceName)
-
-	logStream := make(chan string, 100) // Buffered channel to avoid blocking
-	defer close(logStream)
-
-	logWriter := &log.LogWriter{
-		DeploymentID: deploymentID,
-		User:         "",
-		Ctx:          ctx,
-		Stream:       logStream,
-	}
-
-	go func() {
-		for log := range logStream {
-			c.SSEvent("message", log)
-			c.Writer.Flush()
-		}
-	}()
-
 	projectID := os.Getenv("GCLOUD_PROJECT_ID")
 	if projectID == "" {
-		logStream <- "GCLOUD_PROJECT_ID not set"
 		c.Error(errors.New("GCLOUD_PROJECT_ID not set"))
 		return
 	}
@@ -84,51 +59,42 @@ func DeployHandler(c *gin.Context) {
 
 	token, err := c.Cookie("token")
 	if err != nil {
-		logStream <- fmt.Sprintf("Invalid token: %v", err)
 		c.Error(err)
 		return
 	}
 
 	user, err := jwt.Verify_JWT(token)
 	if err != nil {
-		logStream <- fmt.Sprintf("JWT verification failed: %v", err)
-		c.Error(err)
-		return
-	}
-	logWriter.User = user // Set user for LogWriter
-	var access_token oauth2.Token
-	access_token, err = db.UserToken(c, user)
-	if err != nil {
-		logStream <- fmt.Sprintf("Failed to get user token: %v", err)
 		c.Error(err)
 		return
 	}
 
-	logStream <- "Starting deployment for " + req.ServiceName
+	var access_token oauth2.Token
+	access_token, err = db.UserToken(c, user)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 
 	gitURL := "https://" + access_token.AccessToken + "@github.com/" + user + "/" + req.GitURL
 	gitCleanURL := "https://www.github.com/" + user + "/" + req.GitURL
 
 	tempDir := filepath.Join("/tmp", fmt.Sprintf("repo-%d", time.Now().UnixNano()))
-	if err := utils.RunCommandWithOutput("git", []string{"clone", gitURL, tempDir}, logWriter); err != nil {
-		logStream <- fmt.Sprintf("Git clone failed: %v", err)
+	if err := utils.RunCommandWithOutput("git", []string{"clone", gitURL, tempDir}, nil); err != nil {
 		c.Error(err)
 		return
 	}
 	defer os.RemoveAll(tempDir) // Clean up
 
 	framework := utils.DetectFramework(tempDir)
-	logStream <- "Detected framework: " + framework
 
 	if err := utils.CreateDockerfile(tempDir, framework); err != nil {
-		logStream <- fmt.Sprintf("Dockerfile creation failed: %v", err)
 		c.Error(err)
 		return
 	}
 
 	arClient, err := artifactregistry.NewClient(ctx, option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")))
 	if err != nil {
-		logStream <- fmt.Sprintf("artifactregistry.NewClient: %v", err)
 		c.Error(fmt.Errorf("artifactregistry.NewClient: %v", err))
 		return
 	}
@@ -139,7 +105,6 @@ func DeployHandler(c *gin.Context) {
 
 	_, err = arClient.GetRepository(ctx, &artifactregistrypb.GetRepositoryRequest{Name: repoName})
 	if err != nil {
-		logStream <- "Repository not found — creating: " + repoID
 		_, err = arClient.CreateRepository(ctx, &artifactregistrypb.CreateRepositoryRequest{
 			Parent:       repoParent,
 			RepositoryId: repoID,
@@ -149,38 +114,28 @@ func DeployHandler(c *gin.Context) {
 			},
 		})
 		if err != nil {
-			logStream <- fmt.Sprintf("CreateRepository: %v", err)
 			c.Error(fmt.Errorf("CreateRepository: %v", err))
 			return
 		}
 	}
 
-	logStream <- "Configuring Docker authentication..."
-	if err := utils.RunCommandWithOutput("gcloud", []string{"auth", "configure-docker", fmt.Sprintf("%s-docker.pkg.dev", region), "--quiet"}, logWriter); err != nil {
-		logStream <- fmt.Sprintf("Docker auth configuration failed: %v", err)
+	if err := utils.RunCommandWithOutput("gcloud", []string{"auth", "configure-docker", fmt.Sprintf("%s-docker.pkg.dev", region), "--quiet"}, nil); err != nil {
 		c.Error(fmt.Errorf("Docker auth configuration failed: %v", err))
 		return
 	}
 
-	logStream <- "Building Docker image..."
-	if err := utils.RunCommandWithOutput("docker", []string{"build", "-t", imagePath, tempDir}, logWriter); err != nil {
-		logStream <- fmt.Sprintf("Docker build failed: %v", err)
+	if err := utils.RunCommandWithOutput("docker", []string{"build", "-t", imagePath, tempDir}, nil); err != nil {
 		c.Error(fmt.Errorf("Docker build failed: %v", err))
 		return
 	}
 
-	logStream <- "Pushing image to Artifact Registry..."
-	if err := utils.RunCommandWithOutput("docker", []string{"push", imagePath}, logWriter); err != nil {
-		logStream <- fmt.Sprintf("Docker push failed: %v", err)
+	if err := utils.RunCommandWithOutput("docker", []string{"push", imagePath}, nil); err != nil {
 		c.Error(fmt.Errorf("Docker push failed: %v", err))
 		return
 	}
 
-	logStream <- "Image pushed successfully!"
-
 	runClient, err := run.NewServicesClient(ctx, option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")))
 	if err != nil {
-		logStream <- fmt.Sprintf("run.NewServicesClient: %v", err)
 		c.Error(fmt.Errorf("run.NewServicesClient: %v", err))
 		return
 	}
@@ -212,27 +167,23 @@ func DeployHandler(c *gin.Context) {
 		},
 	})
 	if err != nil {
-		logStream <- fmt.Sprintf("Cloud Run deploy failed: %v", err)
 		c.Error(fmt.Errorf("Cloud Run deploy failed: %v", err))
 		return
 	}
 
-	logStream <- "Making service publicly accessible..."
 	if err := utils.RunCommandWithOutput("gcloud", []string{"run", "services", "add-iam-policy-binding", req.ServiceName,
 		"--region=" + region,
 		"--member=allUsers",
 		"--role=roles/run.invoker",
-		"--quiet"}, logWriter); err != nil {
-		logStream <- fmt.Sprintf("Warning: Failed to make service public: %v", err)
+		"--quiet"}, nil); err != nil {
+		c.Error(fmt.Errorf("Issues in Deployment"))
 	}
 
 	serviceURL := fmt.Sprintf("https://%s.brogramiz.info", req.ServiceName)
 	if err := db.AddProject(c, user, gitCleanURL, serviceURL, framework, req.ServiceName); err != nil {
-		logStream <- fmt.Sprintf("Failed to save project: %v", err)
 		c.Error(err)
 		return
 	}
 
-	logStream <- "Deployment successful! Service URL: " + serviceURL
 	c.JSON(200, DeployResponse{URL: serviceURL, DeploymentID: deploymentID})
 }

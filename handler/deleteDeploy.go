@@ -10,6 +10,7 @@ import (
 
 func DeleteService(c *gin.Context) {
 	name := c.Query("name")
+	db.ProjectExists(c, name)
 	err := helper.DeleteDeploy(c, name)
 	if err != nil {
 		fmt.Println(err)

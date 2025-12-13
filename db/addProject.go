@@ -14,15 +14,8 @@ type Project struct {
 }
 
 func AddProject(ctx context.Context, username, gitURL, projectURL, framework, projectName string) error {
-	query := `
-        INSERT INTO projects (username, git_url, project_url, framework, pname)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(pname) DO UPDATE SET
-            git_url = excluded.git_url,
-            project_url = excluded.project_url,
-            framework = excluded.framework,
-            pname = excluded.pname;
-    `
+	query := `INSERT INTO projects (username, git_url, project_url, framework, pname, status)
+VALUES (?, ?, ?, ?, ?, "deploying");`
 	_, err := ExecuteQuery(ctx, query, username, gitURL, projectURL, framework, projectName)
 	if err != nil {
 		return fmt.Errorf("failed to save project: %w", err)

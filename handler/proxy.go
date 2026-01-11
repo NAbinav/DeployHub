@@ -7,12 +7,13 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 func GetWebsite(c *gin.Context) {
-	fmt.Println(c.Request.Host)
+	fmt.Println(c.Request)
 	if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
 		t, err := c.Cookie("token")
 		fmt.Println(t)
@@ -32,7 +33,33 @@ func GetWebsite(c *gin.Context) {
 		fmt.Println("URL parse error:", err)
 		return
 	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
+	transport := &http.Transport{
+		MaxIdleConns:          1000,
+		MaxIdleConnsPerHost:   100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ForceAttemptHTTP2:     true,
+	}
+
+	// proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy := &httputil.ReverseProxy{
+		Director: func(req *http.Request) {
+			req.URL.Scheme = target.Scheme
+			req.URL.Host = target.Host
+			req.Host = target.Host
+
+			// Preserve original path & query
+			// ReverseProxy does this automatically
+
+			// Forward headers
+			req.Header.Set("X-Forwarded-Host", c.Request.Host)
+			req.Header.Set("X-Forwarded-Proto", "https")
+		},
+		Transport:     transport,
+		FlushInterval: -1, // streaming, no buffering
+	}
+
 	c.Request.Host = target.Host
 	fmt.Println("Proxying request to:", targetURL)
 	proxy.ServeHTTP(c.Writer, c.Request)

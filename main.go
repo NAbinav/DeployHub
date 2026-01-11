@@ -7,6 +7,7 @@ import (
 	"deployhub/jwt"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
 	"log"
@@ -31,7 +32,13 @@ func allowedHostsMiddleware(allowedHosts ...string) gin.HandlerFunc {
 }
 
 func main() {
-	err := db.Init_Cloudflare()
+	fmt.Println("HELLOEOEOEOEO")
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	err = db.Init_Cloudflare()
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -47,11 +54,14 @@ func main() {
 	}
 
 	r := gin.Default()
-
-	// Apply middleware to API routes group
-	api := r.Group("/api", allowedHostsMiddleware("localhost:8080", "brogramiz.info"))
+	// gin.SetMode(gin.ReleaseMode)
+	api := r.Group("/api", allowedHostsMiddleware("deployhub_backend:8080", "localhost", "localhost:8080", "brogramiz.info"))
 	{
+		api.GET("/", func(c *gin.Context) {
+			fmt.Println("h")
+		})
 		api.GET("/login", func(c *gin.Context) {
+			fmt.Println(c.Request)
 			client.LoginHandler(c.Writer, c.Request)
 		})
 
@@ -86,9 +96,11 @@ func main() {
 		api.GET("/projects", handler.GetProject)
 
 		api.DELETE("/projects", handler.DeleteService)
+		api.POST("/webhook/:id", handler.WebhookHandler)
 	}
 
 	r.NoRoute(func(c *gin.Context) {
+		fmt.Println(c)
 		handler.GetWebsite(c)
 	})
 

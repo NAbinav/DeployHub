@@ -17,6 +17,7 @@ func RunCommandWithOutput(name string, args []string, output io.Writer) error {
 	if output == nil {
 		return cmd.Run()
 	}
+	fmt.Println(output)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

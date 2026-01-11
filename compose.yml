@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  deployhub_backend:
+    image: deployhub_backend
+    volumes:
+      - ~/.docker:/root/.docker
+      - ~/.config/gcloud/legacy_credentials/deploy-automation@deployhub-474111.iam.gserviceaccount.com/adc.json:/secrets/gcp/adc.json:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp/adc.json
+      CLOUDSDK_CORE_PROJECT: deployhub-474111
+    command: >
+      sh -c "
+        gcloud auth activate-service-account --key-file=/secrets/gcp/adc.json &&
+        gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet &&
+      go build . &&
+        ./deployhub
+      "
+
+  deployhub_frontend:
+    image: deployhub_frontend
+    ports:
+      - "5173:80"

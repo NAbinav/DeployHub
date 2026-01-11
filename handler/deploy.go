@@ -3,6 +3,8 @@ package handler
 import (
 	"context"
 	"deployhub/db"
+	"deployhub/webhook"
+
 	// "deployhub/helper"
 	"deployhub/jwt"
 	"deployhub/utils"
@@ -35,6 +37,7 @@ type DeployResponse struct {
 }
 
 func DeployHandler(c *gin.Context) {
+	start := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 	var req DeployRequest
@@ -85,6 +88,8 @@ func DeployHandler(c *gin.Context) {
 		return
 	}
 	defer os.RemoveAll(tempDir) // Clean up
+	fmt.Println("cloned!!")
+	fmt.Println(time.Since(start))
 
 	framework := utils.DetectFramework(tempDir)
 
@@ -93,7 +98,7 @@ func DeployHandler(c *gin.Context) {
 		return
 	}
 
-	arClient, err := artifactregistry.NewClient(ctx, option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")))
+	arClient, err := artifactregistry.NewClient(ctx)
 	if err != nil {
 		c.Error(fmt.Errorf("artifactregistry.NewClient: %v", err))
 		return
@@ -129,10 +134,14 @@ func DeployHandler(c *gin.Context) {
 		return
 	}
 
+	fmt.Println("docker image built!!")
+	fmt.Println(time.Since(start))
 	if err := utils.RunCommandWithOutput("docker", []string{"push", imagePath}, nil); err != nil {
 		c.Error(fmt.Errorf("Docker push failed: %v", err))
 		return
 	}
+	fmt.Println("Pushed docker!!")
+	fmt.Println(time.Since(start))
 
 	runClient, err := run.NewServicesClient(ctx, option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")))
 	if err != nil {
@@ -173,11 +182,19 @@ func DeployHandler(c *gin.Context) {
 
 	if err := utils.RunCommandWithOutput("gcloud", []string{"run", "services", "add-iam-policy-binding", req.ServiceName,
 		"--region=" + region,
+		"--project=" + projectID,
 		"--member=allUsers",
 		"--role=roles/run.invoker",
 		"--quiet"}, nil); err != nil {
-		c.Error(fmt.Errorf("Issues in Deployment"))
+		c.Error(err)
 	}
+	fmt.Println("started deployment!!!!!!")
+	webhookUrl := fmt.Sprintf("https://brogramiz.info/api/webhook/%s", req.ServiceName)
+	err = webhook.AddWebhook(access_token, user, req.GitURL, webhookUrl)
+	if err != nil {
+		fmt.Println("webhook added guyss")
+	}
+	fmt.Println(time.Since(start))
 
 	serviceURL := fmt.Sprintf("https://%s.brogramiz.info", req.ServiceName)
 	if err := db.AddProject(c, user, gitCleanURL, serviceURL, framework, req.ServiceName); err != nil {

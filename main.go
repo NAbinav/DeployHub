@@ -32,7 +32,6 @@ func allowedHostsMiddleware(allowedHosts ...string) gin.HandlerFunc {
 }
 
 func main() {
-	fmt.Println("HELLOEOEOEOEO")
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -58,7 +57,7 @@ func main() {
 	api := r.Group("/api", allowedHostsMiddleware("deployhub_backend:8080", "localhost", "localhost:8080", "brogramiz.info"))
 	{
 		api.GET("/", func(c *gin.Context) {
-			fmt.Println("h")
+			fmt.Println("hello")
 		})
 		api.GET("/login", func(c *gin.Context) {
 			fmt.Println(c.Request)

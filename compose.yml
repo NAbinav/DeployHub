@@ -17,6 +17,8 @@ services:
       go build . &&
         ./deployhub
       "
+    ports:
+      - "8080:8080"
 
   deployhub_frontend:
     image: deployhub_frontend

@@ -3,13 +3,13 @@ package handler
 import (
 	"context"
 	"deployhub/db"
-	"deployhub/webhook"
-
-	// "deployhub/helper"
 	"deployhub/jwt"
+	"deployhub/schema"
 	"deployhub/utils"
+	"deployhub/webhook"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -20,46 +20,23 @@ import (
 	runpb "cloud.google.com/go/run/apiv2/runpb"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"golang.org/x/oauth2"
+
+	// "golang.org/x/oauth2"
 	"google.golang.org/api/option"
 )
 
-type DeployRequest struct {
-	GitURL      string            `json:"git_url"`
-	ServiceName string            `json:"name"`
-	Env         map[string]string `json:"env"`
-}
-
-type DeployResponse struct {
-	URL          string `json:"url"`
-	DeploymentID string `json:"deployment_id"`
-	Error        string `json:"error,omitempty"`
-}
-
+// DeployHandler handles HTTP requests for deployment
 func DeployHandler(c *gin.Context) {
-	start := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
-	var req DeployRequest
+	var req schema.DeployRequest
 	if err := c.BindJSON(&req); err != nil {
 		c.Error(err)
 		return
 	}
 
-	// Generate unique deployment ID
-	deploymentID := uuid.New().String()
-
-	projectID := os.Getenv("GCLOUD_PROJECT_ID")
-	if projectID == "" {
-		c.Error(errors.New("GCLOUD_PROJECT_ID not set"))
+	if db.ProjectExists(c.Request.Context(), req.ServiceName) {
+		c.AbortWithError(http.StatusConflict, fmt.Errorf("Sorry this name already exists"))
 		return
 	}
-
-	region := "asia-south1"
-	repoID := "deploy-hub"
-	imageName := fmt.Sprintf("%s-image", req.ServiceName)
-	imagePath := fmt.Sprintf("%s-docker.pkg.dev/%s/%s/%s:latest", region, projectID, repoID, imageName)
-
 	token, err := c.Cookie("token")
 	if err != nil {
 		c.Error(err)
@@ -72,99 +49,215 @@ func DeployHandler(c *gin.Context) {
 		return
 	}
 
-	var access_token oauth2.Token
-	access_token, err = db.UserToken(c, user)
+	accessToken, err := db.UserToken(c, user)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	gitURL := "https://" + access_token.AccessToken + "@github.com/" + user + "/" + req.GitURL
-	gitCleanURL := "https://www.github.com/" + user + "/" + req.GitURL
+	params := schema.DeployParams{
+		User:        user,
+		AccessToken: accessToken,
+		GitURL:      req.GitURL,
+		ServiceName: req.ServiceName,
+		Env:         req.Env,
+	}
 
-	tempDir := filepath.Join("/tmp", fmt.Sprintf("repo-%d", time.Now().UnixNano()))
-	if err := utils.RunCommandWithOutput("git", []string{"clone", gitURL, tempDir}, nil); err != nil {
+	result := Deploy(c.Request.Context(), params)
+	if result.Error != nil {
+		c.Error(result.Error)
+		return
+	}
+
+	gitCleanURL := "https://www.github.com/" + user + "/" + req.GitURL
+	if err := db.AddProject(c, user, gitCleanURL, result.ServiceURL, result.Framework, req.ServiceName); err != nil {
 		c.Error(err)
 		return
 	}
-	defer os.RemoveAll(tempDir) // Clean up
+
+	c.JSON(200, schema.DeployResponse{
+		URL:          result.ServiceURL,
+		DeploymentID: result.DeploymentID,
+	})
+}
+
+// Deploy is the main deployment function that can be called from handlers or webhooks
+func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult {
+	start := time.Now()
+
+	// Create context with timeout if parent context doesn't have one
+	deployCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
+	result := schema.DeployResult{
+		DeploymentID: uuid.New().String(),
+	}
+
+	config, err := initializeDeploymentConfig(params, result.DeploymentID)
+	if err != nil {
+		result.Error = err
+		return result
+	}
+
+	tempDir, err := cloneRepository(config)
+	if err != nil {
+		result.Error = err
+		return result
+	}
+	defer os.RemoveAll(tempDir)
+
 	fmt.Println("cloned!!")
 	fmt.Println(time.Since(start))
 
-	framework := utils.DetectFramework(tempDir)
+	framework, err := prepareDockerfile(tempDir)
+	if err != nil {
+		result.Error = err
+		return result
+	}
+	result.Framework = framework
 
-	if err := utils.CreateDockerfile(tempDir, framework); err != nil {
-		c.Error(err)
-		return
+	if err := ensureArtifactRegistry(deployCtx, config); err != nil {
+		result.Error = err
+		return result
 	}
 
+	if err := buildAndPushDockerImage(config, tempDir, start); err != nil {
+		result.Error = err
+		return result
+	}
+
+	if err := deployToCloudRun(deployCtx, config, params); err != nil {
+		result.Error = err
+		return result
+	}
+
+	if err := configurePublicAccess(config, params.ServiceName); err != nil {
+		fmt.Println("Warning: failed to configure public access:", err)
+	}
+
+	fmt.Println("started deployment!!!!!!")
+
+	if err := setupWebhook(config, params); err != nil {
+		fmt.Println("webhook error:", err)
+	}
+
+	fmt.Println(time.Since(start))
+
+	result.ServiceURL = fmt.Sprintf("https://%s.brogramiz.info", params.ServiceName)
+	return result
+}
+
+func initializeDeploymentConfig(params schema.DeployParams, deploymentID string) (*schema.DeploymentConfig, error) {
+	projectID := os.Getenv("GCLOUD_PROJECT_ID")
+	if projectID == "" {
+		return nil, errors.New("GCLOUD_PROJECT_ID not set")
+	}
+
+	region := "asia-south1"
+	repoID := "deploy-hub"
+	imageName := fmt.Sprintf("%s-image", params.ServiceName)
+	imagePath := fmt.Sprintf("%s-docker.pkg.dev/%s/%s/%s:latest", region, projectID, repoID, imageName)
+	gitURL := "https://" + params.AccessToken.AccessToken + "@github.com/" + params.User + "/" + params.GitURL
+	gitCleanURL := "https://www.github.com/" + params.User + "/" + params.GitURL
+
+	return &schema.DeploymentConfig{
+		ProjectID:    projectID,
+		Region:       region,
+		RepoID:       repoID,
+		ImageName:    imageName,
+		ImagePath:    imagePath,
+		User:         params.User,
+		AccessToken:  params.AccessToken,
+		GitURL:       gitURL,
+		GitCleanURL:  gitCleanURL,
+		DeploymentID: deploymentID,
+	}, nil
+}
+
+func cloneRepository(config *schema.DeploymentConfig) (string, error) {
+	tempDir := filepath.Join("/tmp", fmt.Sprintf("repo-%d", time.Now().UnixNano()))
+	if err := utils.RunCommandWithOutput("git", []string{"clone", config.GitURL, tempDir}, nil); err != nil {
+		return "", err
+	}
+	return tempDir, nil
+}
+
+func prepareDockerfile(tempDir string) (string, error) {
+	framework := utils.DetectFramework(tempDir)
+	if err := utils.CreateDockerfile(tempDir, framework); err != nil {
+		return "", err
+	}
+	return framework, nil
+}
+
+func ensureArtifactRegistry(ctx context.Context, config *schema.DeploymentConfig) error {
 	arClient, err := artifactregistry.NewClient(ctx)
 	if err != nil {
-		c.Error(fmt.Errorf("artifactregistry.NewClient: %v", err))
-		return
+		return fmt.Errorf("artifactregistry.NewClient: %v", err)
 	}
 	defer arClient.Close()
 
-	repoParent := fmt.Sprintf("projects/%s/locations/%s", projectID, region)
-	repoName := fmt.Sprintf("%s/repositories/%s", repoParent, repoID)
+	repoParent := fmt.Sprintf("projects/%s/locations/%s", config.ProjectID, config.Region)
+	repoName := fmt.Sprintf("%s/repositories/%s", repoParent, config.RepoID)
 
 	_, err = arClient.GetRepository(ctx, &artifactregistrypb.GetRepositoryRequest{Name: repoName})
 	if err != nil {
 		_, err = arClient.CreateRepository(ctx, &artifactregistrypb.CreateRepositoryRequest{
 			Parent:       repoParent,
-			RepositoryId: repoID,
+			RepositoryId: config.RepoID,
 			Repository: &artifactregistrypb.Repository{
 				Format:      artifactregistrypb.Repository_DOCKER,
 				Description: "DeployHub managed Docker repo",
 			},
 		})
 		if err != nil {
-			c.Error(fmt.Errorf("CreateRepository: %v", err))
-			return
+			return fmt.Errorf("CreateRepository: %v", err)
 		}
 	}
+	return nil
+}
 
-	if err := utils.RunCommandWithOutput("gcloud", []string{"auth", "configure-docker", fmt.Sprintf("%s-docker.pkg.dev", region), "--quiet"}, nil); err != nil {
-		c.Error(fmt.Errorf("Docker auth configuration failed: %v", err))
-		return
+func buildAndPushDockerImage(config *schema.DeploymentConfig, tempDir string, start time.Time) error {
+	dockerRegistry := fmt.Sprintf("%s-docker.pkg.dev", config.Region)
+	if err := utils.RunCommandWithOutput("gcloud", []string{"auth", "configure-docker", dockerRegistry, "--quiet"}, nil); err != nil {
+		return fmt.Errorf("Docker auth configuration failed: %v", err)
 	}
 
-	if err := utils.RunCommandWithOutput("docker", []string{"build", "-t", imagePath, tempDir}, nil); err != nil {
-		c.Error(fmt.Errorf("Docker build failed: %v", err))
-		return
+	if err := utils.RunCommandWithOutput("docker", []string{"build", "-t", config.ImagePath, tempDir}, nil); err != nil {
+		return fmt.Errorf("Docker build failed: %v", err)
 	}
 
 	fmt.Println("docker image built!!")
 	fmt.Println(time.Since(start))
-	if err := utils.RunCommandWithOutput("docker", []string{"push", imagePath}, nil); err != nil {
-		c.Error(fmt.Errorf("Docker push failed: %v", err))
-		return
+
+	if err := utils.RunCommandWithOutput("docker", []string{"push", config.ImagePath}, nil); err != nil {
+		return fmt.Errorf("Docker push failed: %v", err)
 	}
+
 	fmt.Println("Pushed docker!!")
 	fmt.Println(time.Since(start))
 
+	return nil
+}
+
+func deployToCloudRun(ctx context.Context, config *schema.DeploymentConfig, params schema.DeployParams) error {
 	runClient, err := run.NewServicesClient(ctx, option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")))
 	if err != nil {
-		c.Error(fmt.Errorf("run.NewServicesClient: %v", err))
-		return
+		return fmt.Errorf("run.NewServicesClient: %v", err)
 	}
 	defer runClient.Close()
 
-	envVars := []*runpb.EnvVar{}
-	for k, v := range req.Env {
-		envVars = append(envVars, &runpb.EnvVar{Name: k, Values: &runpb.EnvVar_Value{Value: v}})
-	}
-
-	parent := fmt.Sprintf("projects/%s/locations/%s", projectID, region)
+	envVars := buildEnvVars(params.Env)
+	parent := fmt.Sprintf("projects/%s/locations/%s", config.ProjectID, config.Region)
 
 	_, err = runClient.CreateService(ctx, &runpb.CreateServiceRequest{
 		Parent:    parent,
-		ServiceId: req.ServiceName,
+		ServiceId: params.ServiceName,
 		Service: &runpb.Service{
 			Template: &runpb.RevisionTemplate{
 				Containers: []*runpb.Container{
 					{
-						Image: imagePath,
+						Image: config.ImagePath,
 						Env:   envVars,
 						Resources: &runpb.ResourceRequirements{
 							Limits: map[string]string{"memory": "512Mi"},
@@ -176,31 +269,39 @@ func DeployHandler(c *gin.Context) {
 		},
 	})
 	if err != nil {
-		c.Error(fmt.Errorf("Cloud Run deploy failed: %v", err))
-		return
+		return fmt.Errorf("Cloud Run deploy failed: %v", err)
 	}
 
-	if err := utils.RunCommandWithOutput("gcloud", []string{"run", "services", "add-iam-policy-binding", req.ServiceName,
-		"--region=" + region,
-		"--project=" + projectID,
+	return nil
+}
+
+func buildEnvVars(env map[string]string) []*runpb.EnvVar {
+	envVars := make([]*runpb.EnvVar, 0, len(env))
+	for k, v := range env {
+		envVars = append(envVars, &runpb.EnvVar{
+			Name:   k,
+			Values: &runpb.EnvVar_Value{Value: v},
+		})
+	}
+	return envVars
+}
+
+func configurePublicAccess(config *schema.DeploymentConfig, serviceName string) error {
+	return utils.RunCommandWithOutput("gcloud", []string{
+		"run", "services", "add-iam-policy-binding", serviceName,
+		"--region=" + config.Region,
+		"--project=" + config.ProjectID,
 		"--member=allUsers",
 		"--role=roles/run.invoker",
-		"--quiet"}, nil); err != nil {
-		c.Error(err)
-	}
-	fmt.Println("started deployment!!!!!!")
-	webhookUrl := fmt.Sprintf("https://brogramiz.info/api/webhook/%s", req.ServiceName)
-	err = webhook.AddWebhook(access_token, user, req.GitURL, webhookUrl)
-	if err != nil {
+		"--quiet",
+	}, nil)
+}
+
+func setupWebhook(config *schema.DeploymentConfig, params schema.DeployParams) error {
+	webhookUrl := fmt.Sprintf("https://brogramiz.info/api/webhook/%s", params.ServiceName)
+	err := webhook.AddWebhook(config.AccessToken, config.User, params.GitURL, webhookUrl)
+	if err == nil {
 		fmt.Println("webhook added guyss")
 	}
-	fmt.Println(time.Since(start))
-
-	serviceURL := fmt.Sprintf("https://%s.brogramiz.info", req.ServiceName)
-	if err := db.AddProject(c, user, gitCleanURL, serviceURL, framework, req.ServiceName); err != nil {
-		c.Error(err)
-		return
-	}
-
-	c.JSON(200, DeployResponse{URL: serviceURL, DeploymentID: deploymentID})
+	return err
 }

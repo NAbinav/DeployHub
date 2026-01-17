@@ -22,7 +22,7 @@ func AddWebhook(tokenString oauth2.Token, owner, repo, webhookURL string) error 
 	payload := map[string]any{
 		"name":   "web",
 		"active": true,
-		"events": []string{"push"},
+		"events": []string{"push", "pull_request", "delete"},
 		"config": map[string]string{
 			"url":          webhookURL,
 			"content_type": "json",

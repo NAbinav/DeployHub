@@ -95,7 +95,7 @@ func main() {
 		api.GET("/projects", handler.GetProject)
 
 		api.DELETE("/projects", handler.DeleteService)
-		api.POST("/webhook/:id", handler.WebhookHandler)
+		api.POST("/webhook/:id", handler.HandleGitHubWebhook)
 	}
 
 	r.NoRoute(func(c *gin.Context) {

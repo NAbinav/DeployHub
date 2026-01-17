@@ -19,6 +19,7 @@ type DeployResponse struct {
 type DeployParams struct {
 	User        string
 	AccessToken oauth2.Token
+	Tag         string
 	GitURL      string
 	ServiceName string
 	Env         map[string]string

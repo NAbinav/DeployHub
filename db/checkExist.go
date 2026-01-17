@@ -6,11 +6,16 @@ import (
 )
 
 func ProjectExists(ctx context.Context, pname string) bool {
-	query := `SELECT EXISTS(SELECT 1 FROM projects WHERE pname = ?);`
+	query := `SELECT EXISTS(SELECT 1 FROM projects WHERE pname = ?) AS "exists";`
 	p, err := ExecuteQuerySingle(ctx, query, pname)
 	if err != nil {
-		return true
+		return false
 	}
-	fmt.Println(p[query])
-	return p[query] == 1
+
+	existsValue, ok := p["exists"]
+	if !ok {
+		return false
+	}
+
+	return fmt.Sprint(existsValue) == "1"
 }

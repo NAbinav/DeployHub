@@ -25,7 +25,6 @@ import (
 	"google.golang.org/api/option"
 )
 
-// DeployHandler handles HTTP requests for deployment
 func DeployHandler(c *gin.Context) {
 	var req schema.DeployRequest
 	if err := c.BindJSON(&req); err != nil {
@@ -34,6 +33,7 @@ func DeployHandler(c *gin.Context) {
 	}
 
 	if db.ProjectExists(c.Request.Context(), req.ServiceName) {
+		fmt.Println("ALREADY EXISTS")
 		c.AbortWithError(http.StatusConflict, fmt.Errorf("Sorry this name already exists"))
 		return
 	}
@@ -61,6 +61,7 @@ func DeployHandler(c *gin.Context) {
 		GitURL:      req.GitURL,
 		ServiceName: req.ServiceName,
 		Env:         req.Env,
+		Tag:         "latest",
 	}
 
 	result := Deploy(c.Request.Context(), params)
@@ -156,7 +157,7 @@ func initializeDeploymentConfig(params schema.DeployParams, deploymentID string)
 	region := "asia-south1"
 	repoID := "deploy-hub"
 	imageName := fmt.Sprintf("%s-image", params.ServiceName)
-	imagePath := fmt.Sprintf("%s-docker.pkg.dev/%s/%s/%s:latest", region, projectID, repoID, imageName)
+	imagePath := fmt.Sprintf("%s-docker.pkg.dev/%s/%s/%s:%s", region, projectID, repoID, imageName, params.Tag)
 	gitURL := "https://" + params.AccessToken.AccessToken + "@github.com/" + params.User + "/" + params.GitURL
 	gitCleanURL := "https://www.github.com/" + params.User + "/" + params.GitURL
 

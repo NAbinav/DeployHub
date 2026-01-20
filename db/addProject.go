@@ -11,12 +11,13 @@ type Project struct {
 	Git_url      string `json:"git_url"`
 	Project_url  string `json:"project_url"`
 	Framework    string `json:"framework"`
+	ENV          string `json:"env"`
 }
 
-func AddProject(ctx context.Context, username, gitURL, projectURL, framework, projectName string) error {
-	query := `INSERT INTO projects (username, git_url, project_url, framework, pname, status)
-VALUES (?, ?, ?, ?, ?, "deploying");`
-	_, err := ExecuteQuery(ctx, query, username, gitURL, projectURL, framework, projectName)
+func AddProject(ctx context.Context, username, gitURL, projectURL, framework, projectName, env string) error {
+	query := `INSERT INTO projects (username, git_url, project_url, framework, pname, status,env)
+VALUES (?, ?, ?, ?, ?, "running",?);`
+	_, err := ExecuteQuery(ctx, query, username, gitURL, projectURL, framework, projectName, env)
 	if err != nil {
 		return fmt.Errorf("failed to save project: %w", err)
 	}

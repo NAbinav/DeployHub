@@ -71,7 +71,8 @@ func DeployHandler(c *gin.Context) {
 	}
 
 	gitCleanURL := "https://www.github.com/" + user + "/" + req.GitURL
-	if err := db.AddProject(c, user, gitCleanURL, result.ServiceURL, result.Framework, req.ServiceName); err != nil {
+	cleanENV := utils.ENVString(req.Env)
+	if err := db.AddProject(c, user, gitCleanURL, result.ServiceURL, result.Framework, req.ServiceName, cleanENV); err != nil {
 		c.Error(err)
 		return
 	}
@@ -242,35 +243,75 @@ func buildAndPushDockerImage(config *schema.DeploymentConfig, tempDir string, st
 }
 
 func deployToCloudRun(ctx context.Context, config *schema.DeploymentConfig, params schema.DeployParams) error {
-	runClient, err := run.NewServicesClient(ctx, option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")))
+	client, err := run.NewServicesClient(
+		ctx,
+		option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")),
+	)
 	if err != nil {
 		return fmt.Errorf("run.NewServicesClient: %v", err)
 	}
-	defer runClient.Close()
+	defer client.Close()
 
-	envVars := buildEnvVars(params.Env)
-	parent := fmt.Sprintf("projects/%s/locations/%s", config.ProjectID, config.Region)
+	serviceName := fmt.Sprintf(
+		"projects/%s/locations/%s/services/%s",
+		config.ProjectID,
+		config.Region,
+		params.ServiceName,
+	)
 
-	_, err = runClient.CreateService(ctx, &runpb.CreateServiceRequest{
-		Parent:    parent,
-		ServiceId: params.ServiceName,
-		Service: &runpb.Service{
-			Template: &runpb.RevisionTemplate{
-				Containers: []*runpb.Container{
-					{
-						Image: config.ImagePath,
-						Env:   envVars,
-						Resources: &runpb.ResourceRequirements{
-							Limits: map[string]string{"memory": "512Mi"},
-						},
+	var traffic []*runpb.TrafficTarget
+	if params.Tag != "" && params.Tag != "latest" {
+		// For specific tags, create a tagged revision with 0% traffic
+		traffic = []*runpb.TrafficTarget{
+			{
+				Type:    runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST,
+				Percent: 100,
+				Tag:     params.Tag,
+			},
+		}
+	} else {
+		traffic = []*runpb.TrafficTarget{
+			{
+				Type:    runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST,
+				Percent: 100,
+			},
+		}
+	}
+	service := &runpb.Service{
+		Template: &runpb.RevisionTemplate{
+			Containers: []*runpb.Container{
+				{
+					Image: config.ImagePath,
+					Env:   buildEnvVars(params.Env),
+					Resources: &runpb.ResourceRequirements{
+						Limits: map[string]string{"memory": "512Mi"},
 					},
 				},
 			},
-			Ingress: runpb.IngressTraffic_INGRESS_TRAFFIC_ALL,
 		},
+		Traffic: traffic,
+		Ingress: runpb.IngressTraffic_INGRESS_TRAFFIC_ALL,
+	}
+
+	// Try updating the service first
+	service.Name = serviceName // ONLY for update
+	_, err = client.UpdateService(ctx, &runpb.UpdateServiceRequest{
+		Service: service,
+	})
+	if err == nil {
+		return nil
+	}
+
+	// If update fails, create service (first-time deploy)
+	service.Name = "" // MUST be empty for create
+	parent := fmt.Sprintf("projects/%s/locations/%s", config.ProjectID, config.Region)
+	_, err = client.CreateService(ctx, &runpb.CreateServiceRequest{
+		Parent:    parent,
+		ServiceId: params.ServiceName,
+		Service:   service,
 	})
 	if err != nil {
-		return fmt.Errorf("Cloud Run deploy failed: %v", err)
+		return fmt.Errorf("Cloud Run create failed: %v", err)
 	}
 
 	return nil

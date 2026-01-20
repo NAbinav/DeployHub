@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 
 	"deployhub/db"
@@ -19,140 +21,187 @@ type GitHubWebhookPayload struct {
 	Ref        string `json:"ref"`
 	After      string `json:"after"`
 	Repository struct {
-		CloneURL string `json:"clone_url"`
 		Name     string `json:"name"`
+		CloneURL string `json:"clone_url"`
 		Owner    struct {
 			Login string `json:"login"`
 		} `json:"owner"`
 	} `json:"repository"`
-	Sender struct {
-		Login string `json:"login"`
-	} `json:"sender"`
 	PullRequest *struct {
-		Number int `json:"number"`
+		Number int    `json:"number"`
+		State  string `json:"state"`
 		Head   struct {
 			Ref string `json:"ref"`
 			SHA string `json:"sha"`
 		} `json:"head"`
-		State string `json:"state"`
 	} `json:"pull_request,omitempty"`
 }
 
+/* -------------------- helpers -------------------- */
+
 func sanitizeTag(s string) string {
-	s = strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(s, "/", "-"), "_", "-"))
-	var result strings.Builder
-	for _, ch := range s {
-		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' {
-			result.WriteRune(ch)
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, "/", "-")
+	s = strings.ReplaceAll(s, "_", "-")
+
+	var out strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			out.WriteRune(r)
 		}
 	}
-	return result.String()
+	return out.String()
 }
 
 func verifySignature(payload []byte, signature, secret string) bool {
 	if secret == "" {
-		return true
+		return true // allow if secret not configured
 	}
+
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payload)
-	expectedMAC := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(expectedMAC), []byte(signature))
+	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+
+	return hmac.Equal([]byte(expected), []byte(signature))
 }
 
-func injectTokenIntoGitURL(cloneURL, token string) string {
+func injectGitHubToken(cloneURL, token string) string {
 	if strings.HasPrefix(cloneURL, "https://") {
-		return strings.Replace(cloneURL, "https://", fmt.Sprintf("https://%s@", token), 1)
+		return strings.Replace(
+			cloneURL,
+			"https://",
+			fmt.Sprintf("https://x-access-token:%s@", token),
+			1,
+		)
 	}
 	return cloneURL
 }
 
+func getWebhookSecret() string {
+	// TODO: load from env
+	return ""
+}
+
+/* -------------------- handler -------------------- */
+
 func HandleGitHubWebhook(c *gin.Context) {
+	serviceName := c.Param("id")
+
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "Failed to read request body"})
+		c.JSON(400, gin.H{"error": "unable to read body"})
 		return
 	}
 
-	if !verifySignature(body, c.GetHeader("X-Hub-Signature-256"), getWebhookSecret()) {
-		c.JSON(401, gin.H{"error": "Invalid signature"})
+	if !verifySignature(
+		body,
+		c.GetHeader("X-Hub-Signature-256"),
+		getWebhookSecret(),
+	) {
+		c.JSON(401, gin.H{"error": "invalid signature"})
 		return
 	}
 
 	var payload GitHubWebhookPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid JSON payload"})
+		c.JSON(400, gin.H{"error": "invalid json payload"})
 		return
 	}
 
-	eventType := c.GetHeader("X-GitHub-Event")
-	serviceName := c.Param("id")
-	var tag, previewURL string
-	var shouldDeploy bool
+	event := c.GetHeader("X-GitHub-Event")
 
-	switch eventType {
+	var (
+		tag        string
+		previewURL string
+	)
+
+	switch event {
+
 	case "push":
 		if !strings.HasPrefix(payload.Ref, "refs/heads/") {
-			c.JSON(200, gin.H{"message": "Ignoring non-branch push"})
+			c.JSON(200, gin.H{"message": "ignored non-branch push"})
 			return
 		}
+
 		branch := strings.TrimPrefix(payload.Ref, "refs/heads/")
 		if branch == "main" || branch == "master" {
 			tag = "latest"
 		} else {
 			tag = sanitizeTag(branch)
-			previewURL = fmt.Sprintf("%s-%s.yourdomain.com", tag, payload.Repository.Name)
+			previewURL = fmt.Sprintf(
+				"%s-%s.yourdomain.com",
+				tag,
+				payload.Repository.Name,
+			)
 		}
-		shouldDeploy = true
 
 	case "pull_request":
 		if payload.PullRequest == nil || payload.PullRequest.State != "open" {
-			c.JSON(200, gin.H{"message": "Ignoring closed or invalid PR"})
+			c.JSON(200, gin.H{"message": "ignored closed pr"})
 			return
 		}
+
 		tag = fmt.Sprintf("pr-%d", payload.PullRequest.Number)
-		previewURL = fmt.Sprintf("%s-%s.yourdomain.com", tag, payload.Repository.Name)
-		shouldDeploy = true
+		previewURL = fmt.Sprintf(
+			"%s-%s.yourdomain.com",
+			tag,
+			payload.Repository.Name,
+		)
 
 	default:
-		c.JSON(200, gin.H{"message": fmt.Sprintf("Ignoring event type: %s", eventType)})
+		c.JSON(200, gin.H{"message": "event ignored"})
 		return
 	}
 
-	if !shouldDeploy {
-		c.JSON(200, gin.H{"message": "No deployment triggered"})
-		return
-	}
-
-	accessToken, err := db.UserToken(c.Request.Context(), payload.Repository.Owner.Login)
+	accessToken, err := db.UserToken(
+		context.Background(),
+		payload.Repository.Owner.Login,
+	)
 	if err != nil {
-		c.JSON(500, gin.H{"error": fmt.Sprintf("Failed to get user token: %v", err)})
+		c.JSON(500, gin.H{"error": "failed to fetch user token"})
 		return
 	}
 
-	params := schema.DeployParams{
+	deployParams := schema.DeployParams{
 		User:        payload.Repository.Owner.Login,
 		AccessToken: accessToken,
-		GitURL:      injectTokenIntoGitURL(payload.Repository.CloneURL, accessToken.AccessToken),
+		GitURL:      payload.Repository.Name,
 		ServiceName: serviceName,
 		Tag:         tag,
 		Env:         map[string]string{},
 	}
 
 	go func() {
-		if result := Deploy(c.Request.Context(), params); result.Error != nil {
-			fmt.Printf("Deploy failed for %s: %v\n", serviceName, result.Error)
-		} else {
-			fmt.Printf("Deploy succeeded for %s: %s\n", serviceName, previewURL)
+		ctx := context.Background()
+		result := Deploy(ctx, deployParams)
+
+		if result.Error != nil {
+			log.Printf(
+				"[DEPLOY FAILED] service=%s tag=%s err=%v",
+				serviceName,
+				tag,
+				result.Error,
+			)
+			return
 		}
+
+		log.Printf(
+			"[DEPLOY OK] service=%s tag=%s url=%s",
+			serviceName,
+			tag,
+			previewURL,
+		)
 	}()
 
-	response := gin.H{"message": "Deployment started", "service_name": serviceName, "tag": tag}
-	if previewURL != "" {
-		response["preview_url"] = previewURL
+	resp := gin.H{
+		"message": "deployment started",
+		"service": serviceName,
+		"tag":     tag,
 	}
-	c.JSON(202, response)
-}
 
-func getWebhookSecret() string {
-	return ""
+	if previewURL != "" {
+		resp["preview_url"] = previewURL
+	}
+
+	c.JSON(202, resp)
 }

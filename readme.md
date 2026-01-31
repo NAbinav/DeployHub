@@ -7,11 +7,11 @@
   <img src="https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub" />
 </p>
 
-<p align="center">
+<p align="">
   <strong>Deploy Your Code. In Seconds, Not Hours.</strong>
 </p>
 
-<p align="center">
+<p align="">
   A Vercel-like deployment platform that supports more frameworks, more languages, and container-first deployments — all powered by Go and Google Cloud.
 </p>
 

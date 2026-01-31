@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"deployhub/db"
+	"deployhub/deploy"
 	"deployhub/schema"
 
 	"github.com/gin-gonic/gin"
@@ -173,7 +174,7 @@ func HandleGitHubWebhook(c *gin.Context) {
 
 	go func() {
 		ctx := context.Background()
-		result := Deploy(ctx, deployParams)
+		result := deploy.Deploy(ctx, deployParams)
 
 		if result.Error != nil {
 			log.Printf(

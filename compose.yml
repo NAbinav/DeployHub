@@ -22,5 +22,8 @@ services:
 
   deployhub_frontend:
     image: deployhub_frontend
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
     ports:
       - "5173:80"

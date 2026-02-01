@@ -6,6 +6,7 @@ import (
 	"deployhub/deploy"
 	"deployhub/schema"
 	"deployhub/utils"
+	"fmt"
 	"time"
 )
 
@@ -22,10 +23,13 @@ func Worker(ctx context.Context, params schema.DeployParams) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	env_string := utils.ENVString(params.Env)
+	clean_url := fmt.Sprintf("https://www.github.com/%s/%s", params.User, params.GitURL)
+	db.AddProject(ctx, params.User, clean_url, "", "", params.ServiceName, env_string)
 	go func() {
-		deployCtx, _ := context.WithTimeout(ctx, 15*time.Minute)
+		deployCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+		defer cancel()
 		deploy.Deploy(deployCtx, params)
 	}()
 	return job.ID, nil
-
 }

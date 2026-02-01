@@ -1,7 +1,13 @@
 package db
 
-// import "github.com/gin-gonic/gin"
-//
-// func EditProject(c *gin.Context, name string) {
-// 	query := "update project set project "
-// }
+import (
+	"context"
+	"fmt"
+)
+
+func UpdateProjectAfterDeploy(ctx context.Context, project_url, framework, pname, status string) error {
+	query := `update projects set project_url= ? , framework=? ,status=? where pname=?`
+	result, err := ExecuteQuery(ctx, query, project_url, framework, pname, status)
+	fmt.Println(result)
+	return err
+}

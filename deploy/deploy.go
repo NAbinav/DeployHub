@@ -83,14 +83,12 @@ func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult
 
 	result.ServiceURL = fmt.Sprintf("https://%s.brogramiz.info", params.ServiceName)
 
-	gitCleanURL := "https://www.github.com/" + params.User + "/" + params.GitURL
-
-	cleanENV := utils.ENVString(params.Env)
-
-	err = db.AddProject(context.Background(), params.User, gitCleanURL, result.ServiceURL, result.Framework, params.ServiceName, cleanENV)
+	status := "running"
+	err = db.UpdateProjectAfterDeploy(ctx, result.ServiceURL, framework, params.ServiceName, status)
 	if err != nil {
-		return schema.DeployResult{}
+		fmt.Println("UPDATE DB:", err)
 	}
+
 	return result
 }
 

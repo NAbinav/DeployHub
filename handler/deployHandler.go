@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"deployhub/db"
 	"deployhub/jwt"
 	"deployhub/schema"
@@ -50,7 +51,8 @@ func DeployHandler(c *gin.Context) {
 		Tag:         "latest",
 	}
 
-	DeploymentID, err := worker.Worker(c.Request.Context(), params)
+	ctx := context.WithoutCancel(c.Request.Context())
+	DeploymentID, err := worker.Worker(ctx, params)
 	if err != nil {
 		c.Error(err)
 		return

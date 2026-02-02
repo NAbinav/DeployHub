@@ -11,15 +11,35 @@ func CreateDockerfile(projectPath, framework string) error {
 
 	switch framework {
 	case "nextjs":
-		dockerfile = `FROM node:20-alpine
+		dockerfile = `# ---------- BUILD STAGE ----------
+FROM node:20-alpine AS builder
 WORKDIR /app
+
 COPY package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci --legacy-peer-deps; else npm install --legacy-peer-deps; fi
+RUN npm ci
+
 COPY . .
 RUN npm run build
-ENV PORT=8080
-EXPOSE 8080
-CMD ["npx", "next", "start", "-p", "8080"]`
+
+
+# ---------- RUNTIME STAGE ----------
+FROM node:20-alpine
+WORKDIR /app
+
+# Required for many native deps (sharp, prisma, etc.)
+RUN apk add --no-cache libc6-compat
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Copy standalone output
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]`
 
 	case "vite", "react":
 		buildDir := "dist"

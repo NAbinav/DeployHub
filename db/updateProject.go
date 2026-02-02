@@ -7,7 +7,7 @@ import (
 
 func UpdateProjectAfterDeploy(ctx context.Context, project_url, framework, pname, status string) error {
 	query := `update projects set project_url= ? , framework=? ,status=? where pname=?`
-	result, err := ExecuteQuery(ctx, query, project_url, framework, pname, status)
+	result, err := ExecuteQuery(ctx, query, project_url, framework, status, pname)
 	fmt.Println(result)
 	return err
 }

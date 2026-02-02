@@ -84,6 +84,7 @@ func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult
 	result.ServiceURL = fmt.Sprintf("https://%s.brogramiz.info", params.ServiceName)
 
 	status := "running"
+	fmt.Println(result.ServiceURL, framework, params.ServiceName, status)
 	err = db.UpdateProjectAfterDeploy(ctx, result.ServiceURL, framework, params.ServiceName, status)
 	if err != nil {
 		fmt.Println("UPDATE DB:", err)

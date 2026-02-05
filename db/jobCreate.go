@@ -20,7 +20,7 @@ func EnqueueJob(ctx context.Context, job schema.DeploymentJob) error {
 		job.GitURL,
 		job.Env,
 		job.Tag,
-		"QUEUED",
+		"queued",
 	)
 	fmt.Println(result)
 	return err

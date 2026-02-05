@@ -30,6 +30,7 @@ type DeployResult struct {
 	DeploymentID string
 	Framework    string
 	Error        error
+	Status       string
 }
 
 type DeploymentConfig struct {

@@ -30,16 +30,19 @@ func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult
 	result := schema.DeployResult{
 		DeploymentID: uuid.New().String(),
 	}
+	result.Status = "running"
 
 	config, err := initializeDeploymentConfig(params, result.DeploymentID)
 	if err != nil {
 		result.Error = err
+		result.Status = "failed"
 		return result
 	}
 
 	tempDir, err := cloneRepository(config)
 	if err != nil {
 		result.Error = err
+		result.Status = "failed"
 		return result
 	}
 	defer os.RemoveAll(tempDir)
@@ -50,22 +53,26 @@ func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult
 	framework, err := prepareDockerfile(tempDir)
 	if err != nil {
 		result.Error = err
+		result.Status = "failed"
 		return result
 	}
 	result.Framework = framework
 
 	if err := ensureArtifactRegistry(deployCtx, config); err != nil {
 		result.Error = err
+		result.Status = "failed"
 		return result
 	}
 
 	if err := buildAndPushDockerImage(config, tempDir, start); err != nil {
 		result.Error = err
+		result.Status = "failed"
 		return result
 	}
 
 	if err := deployToCloudRun(deployCtx, config, params); err != nil {
 		result.Error = err
+		result.Status = "failed"
 		return result
 	}
 
@@ -74,6 +81,11 @@ func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult
 	}
 
 	fmt.Println("started deployment!!!!!!")
+	db.AddDockerID(context.Background(), params.ServiceName, "helloooo")
+	if err := utils.RunCommandWithOutput("docker", []string{"images", "-q", config.ImagePath}, os.Stdout); err != nil {
+		fmt.Println("Failed getting docker image id")
+		return result
+	}
 
 	if err := setupWebhook(config, params); err != nil {
 		fmt.Println("webhook error:", err)
@@ -83,9 +95,8 @@ func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult
 
 	result.ServiceURL = fmt.Sprintf("https://%s.brogramiz.info", params.ServiceName)
 
-	status := "running"
-	fmt.Println(result.ServiceURL, framework, params.ServiceName, status)
-	err = db.UpdateProjectAfterDeploy(ctx, result.ServiceURL, framework, params.ServiceName, status)
+	fmt.Println(result.DeploymentID, result.ServiceURL, framework, params.ServiceName, result.Status)
+	err = db.UpdateProjectAfterDeploy(ctx, result.ServiceURL, framework, params.ServiceName, result.Status)
 	if err != nil {
 		fmt.Println("UPDATE DB:", err)
 	}

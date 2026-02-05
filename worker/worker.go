@@ -29,7 +29,10 @@ func Worker(ctx context.Context, params schema.DeployParams) (string, error) {
 	go func() {
 		deployCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 		defer cancel()
-		deploy.Deploy(deployCtx, params)
+		result := deploy.Deploy(deployCtx, params)
+		fmt.Println(job.ID)
+		db.UpdateQueue(ctx, job.ID, result.ServiceURL, result.Framework, result.Status)
+		db.UpdateProjectAfterDeploy(ctx, result.ServiceURL, result.Framework, params.GitURL, result.Status)
 	}()
 	return job.ID, nil
 }

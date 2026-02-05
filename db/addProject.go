@@ -28,7 +28,7 @@ VALUES (?, ?, ?, ?, ?, "deploying...",?);`
 
 func GetUserProject(ctx context.Context, username string) ([]map[string]any, error) {
 	query := `
-		SELECT username, git_url, project_url, framework,pname
+		SELECT username, git_url, project_url, framework,pname,status
 		FROM projects
 		WHERE username = ?
 	`

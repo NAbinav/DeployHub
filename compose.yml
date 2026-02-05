@@ -3,6 +3,9 @@ version: '3.8'
 services:
   deployhub_backend:
     image: deployhub_backend
+    build:
+      context: .
+      dockerfile: Dockerfile
     volumes:
       - ~/.docker:/root/.docker
       - ~/.config/gcloud/legacy_credentials/deploy-automation@deployhub-474111.iam.gserviceaccount.com/adc.json:/secrets/gcp/adc.json:ro

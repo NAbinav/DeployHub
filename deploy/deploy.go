@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"bytes"
 	"context"
 	"deployhub/db"
 	"deployhub/schema"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	artifactregistry "cloud.google.com/go/artifactregistry/apiv1"
@@ -81,12 +83,25 @@ func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult
 	}
 
 	fmt.Println("started deployment!!!!!!")
-	db.AddDockerID(context.Background(), params.ServiceName, "helloooo")
-	if err := utils.RunCommandWithOutput("docker", []string{"images", "-q", config.ImagePath}, os.Stdout); err != nil {
+	var buf bytes.Buffer
+
+	err = utils.RunCommandWithOutput(
+		"sh", []string{"-c", fmt.Sprintf("docker images -q %s | head -n 1", config.ImagePath)},
+		&buf,
+	)
+	if err != nil {
 		fmt.Println("Failed getting docker image id")
 		return result
 	}
 
+	raw := strings.TrimSpace(buf.String())
+	lines := strings.Split(raw, "\n")
+	dockerImageID := strings.TrimSpace(lines[len(lines)-1])
+	if dockerImageID == "" {
+		fmt.Println("No docker image ID found")
+		return result
+	}
+	db.AddDockerID(context.Background(), params.ServiceName, dockerImageID)
 	if err := setupWebhook(config, params); err != nil {
 		fmt.Println("webhook error:", err)
 	}

@@ -75,7 +75,7 @@ func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult
 		return result
 	}
 
-	if err := deployToCloudRun(deployCtx, config, params); err != nil {
+	if err := DeployToCloudRun(deployCtx, config, params); err != nil {
 		result.Error = err
 		result.Status = "failed"
 		return result
@@ -87,24 +87,33 @@ func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult
 
 	fmt.Println("started deployment!!!!!!")
 	var buf bytes.Buffer
-
+	// Use inspect to get the RepoDigest (the cloud address)
 	err = utils.RunCommandWithOutput(
-		"sh", []string{"-c", fmt.Sprintf("docker images -q %s | head -n 1", config.ImagePath)},
+		"docker",
+		[]string{"inspect", "--format", "{{index .RepoDigests 0}}", config.ImagePath},
 		&buf,
 	)
+
 	if err != nil {
-		fmt.Println("Failed getting docker image id")
+		fmt.Println("Failed getting registry digest:", err)
 		return result
 	}
 
-	raw := strings.TrimSpace(buf.String())
-	lines := strings.Split(raw, "\n")
-	dockerImageID := strings.TrimSpace(lines[len(lines)-1])
-	if dockerImageID == "" {
-		fmt.Println("No docker image ID found")
+	// Result looks like: region-docker.pkg.dev/project/repo/name@sha256:abcdef...
+	rawPath := strings.TrimSpace(buf.String())
+	parts := strings.Split(rawPath, "@")
+
+	if len(parts) < 2 {
+		fmt.Println("No registry digest found in path")
 		return result
 	}
-	db.AddDockerID(context.Background(), params.ServiceName, dockerImageID)
+
+	// THIS is the ID you save to your database (e.g., "sha256:2273c0f9...")
+	dockerImageID := parts[1]
+	if config.Branch == "" {
+		config.Branch = "main"
+	}
+	db.AddDockerID(context.Background(), params.ServiceName, dockerImageID, config.Branch)
 	if err := setupWebhook(config, params); err != nil {
 		fmt.Println("webhook error:", err)
 	}
@@ -236,7 +245,7 @@ func buildAndPushDockerImage(config *schema.DeploymentConfig, tempDir string, st
 	return nil
 }
 
-func deployToCloudRun(ctx context.Context, config *schema.DeploymentConfig, params schema.DeployParams) error {
+func DeployToCloudRun(ctx context.Context, config *schema.DeploymentConfig, params schema.DeployParams) error {
 	client, err := run.NewServicesClient(
 		ctx,
 		option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")),

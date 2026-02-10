@@ -1,36 +1,71 @@
 package handler
 
 import (
-	"deployhub/db"
-	"deployhub/jwt"
+	"context"
+	"deployhub/deploy"
+	"deployhub/schema"
+	"deployhub/utils"
+	"fmt"
+	"os"
 
 	"github.com/gin-gonic/gin"
 )
 
-func Rollback(c *gin.Context) {
-	token, err := c.Cookie("token")
-	if err != nil {
-		c.Error(err)
+func HandleRollback(c *gin.Context) {
+	serviceName := c.Param("pname")
+	var body struct {
+		ImageID string `json:"image_id"`
+	}
+
+	if err := c.ShouldBindJSON(&body); err != nil || body.ImageID == "" {
+		c.JSON(400, gin.H{"error": "valid image_id (sha256 digest) is required"})
 		return
 	}
 
-	user, err := jwt.Verify_JWT(token)
+	projectID := os.Getenv("GCLOUD_PROJECT_ID")
+	region := "asia-south1"
+	repoID := "deploy-hub"
+
+	// Format: region-docker.pkg.dev/project/repo/image@sha256:hash
+	imagePath := fmt.Sprintf("%s-docker.pkg.dev/%s/%s/%s-image", region, projectID, repoID, serviceName)
+	sourceImage := fmt.Sprintf("%s@%s", imagePath, body.ImageID)
+	targetImage := fmt.Sprintf("%s:latest", imagePath)
+
+	// 1. Instant Retag (Tells Google: "Make 'latest' point to this specific SHA")
+	fmt.Printf("🛠 Rolling back to digest: %s\n", body.ImageID)
+	err := utils.RunCommandWithOutput("gcloud", []string{
+		"artifacts", "docker", "tags", "add",
+		sourceImage,
+		targetImage,
+		"--quiet",
+	}, os.Stdout)
+
 	if err != nil {
-		c.Error(err)
+		c.JSON(500, gin.H{"error": fmt.Sprintf("Registry retag failed: %v", err)})
 		return
 	}
 
-	_, err = db.UserToken(c, user)
-	if err != nil {
-		c.Error(err)
-		return
+	// We use your existing function to move 100% traffic to the 'latest' image
+	ctx := context.Background()
+	config := &schema.DeploymentConfig{
+		ProjectID: projectID,
+		Region:    region,
+		ImagePath: targetImage,
 	}
-	pname := c.Param("pname")
-	ids, err := db.GetDockerIds(c, pname)
 
-	if err != nil {
-		c.Errors.JSON()
+	params := schema.DeployParams{
+		ServiceName: serviceName,
+		Tag:         "latest",
+		Env:         map[string]string{},
+	}
+
+	if err := deploy.DeployToCloudRun(ctx, config, params); err != nil {
+		c.JSON(500, gin.H{"error": fmt.Sprintf("Cloud Run update failed: %v", err)})
 		return
 	}
-	c.JSON(200, ids)
+
+	c.JSON(200, gin.H{
+		"message":      "Rollback successful",
+		"active_image": body.ImageID,
+	})
 }

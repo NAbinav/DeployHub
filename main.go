@@ -97,7 +97,8 @@ func main() {
 		api.DELETE("/projects", handler.DeleteService)
 		api.POST("/webhook/:id", handler.HandleGitHubWebhook)
 
-		api.GET("/rollback/:pname", handler.Rollback)
+		api.GET("/rollback/:pname", handler.ImageIds)
+		api.POST("/rollback/:pname", handler.HandleRollback)
 	}
 
 	r.NoRoute(func(c *gin.Context) {

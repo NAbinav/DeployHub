@@ -22,6 +22,7 @@ type DeployParams struct {
 	Tag         string
 	GitURL      string
 	ServiceName string
+	Branch      string
 	Env         map[string]string
 }
 
@@ -44,4 +45,5 @@ type DeploymentConfig struct {
 	GitURL       string
 	GitCleanURL  string
 	DeploymentID string
+	Branch       string
 }

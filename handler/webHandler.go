@@ -113,6 +113,7 @@ func HandleGitHubWebhook(c *gin.Context) {
 
 	var (
 		tag        string
+		branch     string
 		previewURL string
 	)
 
@@ -124,7 +125,7 @@ func HandleGitHubWebhook(c *gin.Context) {
 			return
 		}
 
-		branch := strings.TrimPrefix(payload.Ref, "refs/heads/")
+		branch = strings.TrimPrefix(payload.Ref, "refs/heads/")
 		if branch == "main" || branch == "master" {
 			tag = "latest"
 		} else {
@@ -141,6 +142,7 @@ func HandleGitHubWebhook(c *gin.Context) {
 			c.JSON(200, gin.H{"message": "ignored closed pr"})
 			return
 		}
+		branch = payload.PullRequest.Head.Ref
 
 		tag = fmt.Sprintf("pr-%d", payload.PullRequest.Number)
 		previewURL = fmt.Sprintf(
@@ -168,6 +170,7 @@ func HandleGitHubWebhook(c *gin.Context) {
 		AccessToken: accessToken,
 		GitURL:      payload.Repository.Name,
 		ServiceName: serviceName,
+		Branch:      branch,
 		Tag:         tag,
 		Env:         map[string]string{},
 	}

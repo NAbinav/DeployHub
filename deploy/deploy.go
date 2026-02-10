@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"deployhub/db"
+	"deployhub/helper"
 	"deployhub/schema"
 	"deployhub/utils"
 	"deployhub/webhook"
@@ -18,6 +19,8 @@ import (
 	"cloud.google.com/go/artifactregistry/apiv1/artifactregistrypb"
 	run "cloud.google.com/go/run/apiv2"
 	"cloud.google.com/go/run/apiv2/runpb"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
 )
@@ -140,6 +143,7 @@ func initializeDeploymentConfig(params schema.DeployParams, deploymentID string)
 		ImagePath:    imagePath,
 		User:         params.User,
 		AccessToken:  params.AccessToken,
+		Branch:       params.Branch,
 		GitURL:       gitURL,
 		GitCleanURL:  gitCleanURL,
 		DeploymentID: deploymentID,
@@ -147,10 +151,30 @@ func initializeDeploymentConfig(params schema.DeployParams, deploymentID string)
 }
 
 func cloneRepository(config *schema.DeploymentConfig) (string, error) {
-	tempDir := filepath.Join("/tmp", fmt.Sprintf("repo-%d", time.Now().UnixNano()))
-	if err := utils.RunCommandWithOutput("git", []string{"clone", config.GitURL, tempDir}, nil); err != nil {
-		return "", err
+	// Create unique temp directory
+	branch := config.Branch
+	if branch == "" {
+		branch = "main" // Default to main if not specified
 	}
+	fmt.Println(branch)
+	tempDir := filepath.Join("/tmp", fmt.Sprintf("repo-%d", time.Now().UnixNano()))
+
+	fmt.Printf("Cloning branch: %s from %s\n", config.Branch, config.GitURL)
+
+	// Configure Clone Options
+	cloneOptions := &git.CloneOptions{
+		URL:           config.GitURL,
+		Progress:      os.Stdout,
+		SingleBranch:  true,                                    // Clone only the specific branch (lighter)
+		Depth:         1,                                       // Shallow clone (faster)
+		ReferenceName: plumbing.NewBranchReferenceName(branch), // Target specific branch
+	}
+
+	_, err := git.PlainClone(tempDir, false, cloneOptions)
+	if err != nil {
+		return "", fmt.Errorf("git clone failed: %v", err)
+	}
+
 	return tempDir, nil
 }
 
@@ -222,33 +246,70 @@ func deployToCloudRun(ctx context.Context, config *schema.DeploymentConfig, para
 	}
 	defer client.Close()
 
-	serviceName := fmt.Sprintf(
-		"projects/%s/locations/%s/services/%s",
-		config.ProjectID,
-		config.Region,
-		params.ServiceName,
-	)
+	serviceID := fmt.Sprintf("projects/%s/locations/%s/services/%s", config.ProjectID, config.Region, params.ServiceName)
+	parent := fmt.Sprintf("projects/%s/locations/%s", config.ProjectID, config.Region)
+
+	cleanTag := helper.SanitizeTag(params.Tag)
+	revisionName := fmt.Sprintf("%s-%s-%d", params.ServiceName, cleanTag, time.Now().Unix())
+
+	//  Fetch existing service to preserve current traffic
+	existingService, err := client.GetService(ctx, &runpb.GetServiceRequest{Name: serviceID})
+	isNewService := err != nil
 
 	var traffic []*runpb.TrafficTarget
-	if params.Tag != "" && params.Tag != "latest" {
-		// For specific tags, create a tagged revision with 0% traffic
+	isProd := params.Tag == "latest" || params.Tag == "main" || params.Tag == "master"
+
+	if isNewService {
+		// First deploy: Always 100% to new revision
 		traffic = []*runpb.TrafficTarget{
 			{
-				Type:    runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST,
-				Percent: 100,
-				Tag:     params.Tag,
+				Type:     runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION,
+				Revision: revisionName,
+				Percent:  100,
+				Tag:      cleanTag,
+			},
+		}
+	} else if isProd {
+		// Production deploy: Move 100% to new revision
+		traffic = []*runpb.TrafficTarget{
+			{
+				Type:     runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION,
+				Revision: revisionName,
+				Percent:  100,
 			},
 		}
 	} else {
-		traffic = []*runpb.TrafficTarget{
-			{
-				Type:    runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST,
-				Percent: 100,
-			},
+		// Preview deploy: Keep existing 100% traffic, add new revision with 0% and tag
+		currentProdRevision := ""
+		for _, t := range existingService.Traffic {
+			if t.Percent == 100 {
+				currentProdRevision = t.Revision
+				break
+			}
 		}
+
+		// Keep old traffic
+		if currentProdRevision != "" {
+			traffic = append(traffic, &runpb.TrafficTarget{
+				Type:     runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION,
+				Revision: currentProdRevision,
+				Percent:  100,
+			})
+		}
+
+		// Add new preview
+		traffic = append(traffic, &runpb.TrafficTarget{
+			Type:     runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION,
+			Revision: revisionName,
+			Percent:  0,
+			Tag:      cleanTag,
+		})
 	}
+
+	// 3. Construct Service
 	service := &runpb.Service{
 		Template: &runpb.RevisionTemplate{
+			Revision: revisionName,
 			Containers: []*runpb.Container{
 				{
 					Image: config.ImagePath,
@@ -264,25 +325,25 @@ func deployToCloudRun(ctx context.Context, config *schema.DeploymentConfig, para
 		Ingress: runpb.IngressTraffic_INGRESS_TRAFFIC_ALL,
 	}
 
-	// Try updating the service first
-	service.Name = serviceName // ONLY for update
-	_, err = client.UpdateService(ctx, &runpb.UpdateServiceRequest{
-		Service: service,
-	})
-	if err == nil {
-		return nil
+	// 4. Execute Update or Create
+	if isNewService {
+		service.Name = "" // Must be empty for create
+		req := &runpb.CreateServiceRequest{
+			Parent:    parent,
+			ServiceId: params.ServiceName,
+			Service:   service,
+		}
+		_, err = client.CreateService(ctx, req)
+	} else {
+		service.Name = serviceID // Must be full path for update
+		req := &runpb.UpdateServiceRequest{
+			Service: service,
+		}
+		_, err = client.UpdateService(ctx, req)
 	}
 
-	// If update fails, create service (first-time deploy)
-	service.Name = "" // MUST be empty for create
-	parent := fmt.Sprintf("projects/%s/locations/%s", config.ProjectID, config.Region)
-	_, err = client.CreateService(ctx, &runpb.CreateServiceRequest{
-		Parent:    parent,
-		ServiceId: params.ServiceName,
-		Service:   service,
-	})
 	if err != nil {
-		return fmt.Errorf("Cloud Run create failed: %v", err)
+		return fmt.Errorf("Cloud Run deploy failed: %v", err)
 	}
 
 	return nil

@@ -123,7 +123,7 @@ Manage environment variables directly from the dashboard:
 Features currently in development:
 
 - [ ] Custom domains
-- [ ] Deployment rollbacks
+- [x] Deployment rollbacks
 - [ ] Real-time build & runtime logs
 - [ ] Multi-region deployments
 - [ ] Team collaboration features
@@ -165,7 +165,9 @@ Deployment should be:
 
 ## License
 
-License information coming soon.
+This project is licensed under the [MIT License](LICENSE) - see the [LICENSE](LICENSE) file for details.
+
+[![License: MIT](https://img.shields.io)](https://opensource.org)
 
 ---
 

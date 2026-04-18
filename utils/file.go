@@ -36,7 +36,7 @@ func DetectFramework(projectPath string) string {
 		if strings.Contains(str, "fastapi") {
 			return "fastapi"
 		}
-		if strings.Contains(str, "flask") {
+		if strings.Contains(str, "Flask") {
 			return "flask"
 		}
 		return "python"

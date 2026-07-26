@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"strings"
 
 	"deployhub/db"
@@ -79,8 +80,7 @@ func injectGitHubToken(cloneURL, token string) string {
 }
 
 func getWebhookSecret() string {
-	// TODO: load from env
-	return ""
+	return os.Getenv("WEBHOOK_SECRET")
 }
 
 /* -------------------- handler -------------------- */
@@ -131,7 +131,7 @@ func HandleGitHubWebhook(c *gin.Context) {
 		} else {
 			tag = sanitizeTag(branch)
 			previewURL = fmt.Sprintf(
-				"%s-%s.yourdomain.com",
+				"%s-%s.abinavn.dev",
 				tag,
 				payload.Repository.Name,
 			)
@@ -146,7 +146,7 @@ func HandleGitHubWebhook(c *gin.Context) {
 
 		tag = fmt.Sprintf("pr-%d", payload.PullRequest.Number)
 		previewURL = fmt.Sprintf(
-			"%s-%s.yourdomain.com",
+			"%s-%s.abinavn.dev",
 			tag,
 			payload.Repository.Name,
 		)

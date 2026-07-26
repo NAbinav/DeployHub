@@ -54,7 +54,7 @@ func main() {
 
 	r := gin.Default()
 	// gin.SetMode(gin.ReleaseMode)
-	api := r.Group("/api", allowedHostsMiddleware("deployhub_backend:8080", "localhost", "localhost:8080", "brogramiz.info"))
+	api := r.Group("/api", allowedHostsMiddleware("deployhub_backend:8080", "localhost", "localhost:8080", "deployhub.abinavn.dev"))
 	{
 		api.GET("/", func(c *gin.Context) {
 			fmt.Println("hello")
@@ -93,6 +93,8 @@ func main() {
 		})
 
 		api.GET("/projects", handler.GetProject)
+		api.GET("/projects/:pname/env", handler.GetEnvHandler)
+		api.PUT("/projects/:pname/env", handler.UpdateEnvHandler)
 
 		api.DELETE("/projects", handler.DeleteService)
 		api.POST("/webhook/:id", handler.HandleGitHubWebhook)

@@ -120,7 +120,7 @@ func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult
 
 	fmt.Println(time.Since(start))
 
-	result.ServiceURL = fmt.Sprintf("https://%s.brogramiz.info", params.ServiceName)
+	result.ServiceURL = fmt.Sprintf("https://%s.abinavn.dev", params.ServiceName)
 
 	fmt.Println(result.DeploymentID, result.ServiceURL, framework, params.ServiceName, result.Status)
 	err = db.UpdateProjectAfterDeploy(ctx, result.ServiceURL, framework, params.ServiceName, result.Status)
@@ -381,7 +381,7 @@ func configurePublicAccess(config *schema.DeploymentConfig, serviceName string) 
 }
 
 func setupWebhook(config *schema.DeploymentConfig, params schema.DeployParams) error {
-	webhookUrl := fmt.Sprintf("https://brogramiz.info/api/webhook/%s", params.ServiceName)
+	webhookUrl := fmt.Sprintf("https://deployhub.abinavn.dev/api/webhook/%s", params.ServiceName)
 	err := webhook.AddWebhook(config.AccessToken, config.User, params.GitURL, webhookUrl)
 	if err == nil {
 		fmt.Println("webhook added guyss")

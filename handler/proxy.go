@@ -14,7 +14,7 @@ import (
 
 func GetWebsite(c *gin.Context) {
 	fmt.Println(c.Request)
-	if c.Request.Host == "localhost:8080" || c.Request.Host == "brogramiz.info" {
+	if c.Request.Host == "localhost:8080" || c.Request.Host == "deployhub.abinavn.dev" {
 		t, err := c.Cookie("token")
 		fmt.Println(t)
 		if err != nil {

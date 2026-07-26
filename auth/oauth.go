@@ -79,7 +79,7 @@ func (c *Client) CallbackHandler(w http.ResponseWriter, r *http.Request, ctx *gi
 		return fmt.Errorf("failed to create JWT: %w", err)
 	}
 
-	ctx.SetCookie("token", jwt_token, 7200, "/", "brogramiz.info", true, true)
+	ctx.SetCookie("token", jwt_token, 7200, "/", "abinavn.dev", true, true)
 
 	ctx.Redirect(http.StatusTemporaryRedirect, "/")
 	return nil

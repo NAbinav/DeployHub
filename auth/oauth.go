@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -79,9 +80,21 @@ func (c *Client) CallbackHandler(w http.ResponseWriter, r *http.Request, ctx *gi
 		return fmt.Errorf("failed to create JWT: %w", err)
 	}
 
-	ctx.SetCookie("token", jwt_token, 7200, "/", "abinavn.dev", true, true)
+	env := os.Getenv("ENV")
+	var cookieDomain string
+	var redirectURL string
 
-	ctx.Redirect(http.StatusTemporaryRedirect, "/")
+	if env == "production" {
+		cookieDomain = "deployhub.abinavn.dev"
+		redirectURL = "https://deployhub.abinavn.dev"
+		ctx.SetCookie("token", jwt_token, 7200, "/", cookieDomain, true, true)
+	} else {
+		cookieDomain = "localhost"
+		redirectURL = "http://localhost:5173"
+		ctx.SetCookie("token", jwt_token, 7200, "/", cookieDomain, false, true)
+	}
+
+	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)
 	return nil
 }
 

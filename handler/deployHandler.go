@@ -1,15 +1,17 @@
 package handler
 
 import (
-	"context"
 	"deployhub/db"
 	"deployhub/jwt"
+	"deployhub/queue"
 	"deployhub/schema"
-	"deployhub/worker"
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 )
 
 func DeployHandler(c *gin.Context) {
@@ -50,17 +52,22 @@ func DeployHandler(c *gin.Context) {
 		Env:         req.Env,
 		Tag:         "latest",
 	}
-
-	ctx := context.WithoutCancel(c.Request.Context())
-	DeploymentID, err := worker.Worker(ctx, params)
+	payload, err := json.Marshal(params)
+	task := asynq.NewTask("deploy", payload)
+	info, err := queue.AsynqClient.Enqueue(task)
 	if err != nil {
-		c.Error(err)
-		return
+		log.Fatalf("could not enqueue task: %v", err)
 	}
+	log.Printf("enqueued task: id=%s queue=%s", info.ID, info.Queue)
 
-	c.JSON(200, schema.DeployResponse{
-		DeploymentID: DeploymentID,
-	})
+	// ctx := context.WithoutCancel(c.Request.Context())
+	// DeploymentID, err := worker.Worker(ctx, params)
+	// if err != nil {
+	// 	c.Error(err)
+	// 	return
+	// }
+	//
+	c.JSON(200, "deploying...")
 }
 
 // Deploy is the main deployment function that can be called from handlers or webhooks

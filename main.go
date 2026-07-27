@@ -5,14 +5,16 @@ import (
 	"deployhub/db"
 	"deployhub/handler"
 	"deployhub/jwt"
+	"deployhub/queue"
 	"fmt"
+	"log"
+	"net/http"
+	"os"
+
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
-	"log"
-	"net/http"
-	"os"
 )
 
 func allowedHostsMiddleware(allowedHosts ...string) gin.HandlerFunc {
@@ -42,6 +44,9 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+
+	queue.InitClient()
+	defer queue.AsynqClient.Close()
 
 	client := auth.Client{}
 	client.Config = &oauth2.Config{

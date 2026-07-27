@@ -1,27 +1,41 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  deployhub_backend:
-    image: deployhub_backend
+  deployhub_worker:
+    image: deployhub_worker
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.worker
+    env_file:
+      - .env
     volumes:
       - ~/.docker:/root/.docker
-      - ~/.config/gcloud/legacy_credentials/deploy-automation@deployhub-474111.iam.gserviceaccount.com/adc.json:/secrets/gcp/adc.json:ro
+      - ~/.config/gcloud/application_default_credentials.json:/secrets/gcp/adc.json:ro
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp/adc.json
-      CLOUDSDK_CORE_PROJECT: deployhub-474111
-    command: >
-      sh -c "
-        gcloud auth activate-service-account --key-file=/secrets/gcp/adc.json &&
-        gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet &&
-      go build . &&
-        ./deployhub
-      "
+      CLOUDSDK_CORE_PROJECT: ${GCLOUD_PROJECT_ID}
+      REDIS_URL: redis:6379
+    depends_on:
+      - redis
+
+  api:
+    image: deployhub_api
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file:
+      - .env
+    volumes:
+      - ~/.config/gcloud/application_default_credentials.json:/secrets/gcp/adc.json:ro
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp/adc.json
+      CLOUDSDK_CORE_PROJECT: ${GCLOUD_PROJECT_ID}
+      REDIS_URL: redis:6379
     ports:
       - "8080:8080"
+    depends_on:
+      - redis
 
   deployhub_frontend:
     image: deployhub_frontend
@@ -30,3 +44,10 @@ services:
       dockerfile: Dockerfile
     ports:
       - "5173:80"
+
+  redis:
+    image: redis:alpine
+    container_name: redis_cache
+    restart: always
+    ports:
+      - "6379:6379"

@@ -63,20 +63,25 @@ func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult
 	}
 	result.Framework = framework
 
+	fmt.Println("framework" + framework)
 	if err := ensureArtifactRegistry(deployCtx, config); err != nil {
 		result.Error = err
 		result.Status = "failed"
+		fmt.Println(err)
 		return result
 	}
 
 	if err := buildAndPushDockerImage(config, tempDir, start); err != nil {
 		result.Error = err
+		fmt.Println(err)
 		result.Status = "failed"
 		return result
 	}
 
+	fmt.Println("built")
 	if err := DeployToCloudRun(deployCtx, config, params); err != nil {
 		result.Error = err
+		fmt.Println(err)
 		result.Status = "failed"
 		return result
 	}

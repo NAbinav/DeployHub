@@ -18,17 +18,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func Init_Gcloud() {
-	err := utils.RunCommandWithOutput("gcloud", []string{
-		"auth",
-		"activate-service-account",
-		"--key-file=" + os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"),
-	}, os.Stdout)
 
-	if err != nil {
-		log.Fatalf("Failed to authenticate gcloud: %v", err)
-	}
-}
+
 
 func HandleWorker(ctx context.Context, t *asynq.Task) error {
 	var params schema.DeployParams
@@ -71,7 +62,7 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	Init_Gcloud()
+
 
 	srv := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: os.Getenv("REDIS_URL")},

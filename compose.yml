@@ -9,13 +9,13 @@ services:
     env_file:
       - .env
     volumes:
-      - ~/.docker:/root/.docker
+      - ./.env:/app/.env:ro
       - ~/.config/gcloud/application_default_credentials.json:/secrets/gcp/adc.json:ro
-      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp/adc.json
-      CLOUDSDK_CORE_PROJECT: ${GCLOUD_PROJECT_ID}
       REDIS_URL: redis:6379
+    ports:
+      - "8081:8081"
     depends_on:
       - redis
 
@@ -27,10 +27,10 @@ services:
     env_file:
       - .env
     volumes:
+      - ./.env:/app/.env:ro
       - ~/.config/gcloud/application_default_credentials.json:/secrets/gcp/adc.json:ro
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp/adc.json
-      CLOUDSDK_CORE_PROJECT: ${GCLOUD_PROJECT_ID}
       REDIS_URL: redis:6379
     ports:
       - "8080:8080"
@@ -44,6 +44,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "5173:80"
+    depends_on:
+      - api
 
   redis:
     image: redis:alpine

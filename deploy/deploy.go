@@ -1,7 +1,6 @@
 package deploy
 
 import (
-	"bytes"
 	"context"
 	"deployhub/db"
 	"deployhub/helper"
@@ -17,6 +16,7 @@ import (
 
 	artifactregistry "cloud.google.com/go/artifactregistry/apiv1"
 	"cloud.google.com/go/artifactregistry/apiv1/artifactregistrypb"
+	"cloud.google.com/go/iam/apiv1/iampb"
 	run "cloud.google.com/go/run/apiv2"
 	"cloud.google.com/go/run/apiv2/runpb"
 	"github.com/go-git/go-git/v5"
@@ -91,25 +91,21 @@ func Deploy(ctx context.Context, params schema.DeployParams) schema.DeployResult
 	}
 
 	fmt.Println("started deployment!!!!!!")
-	var buf bytes.Buffer
-	// Use inspect to get the RepoDigest (the cloud address)
-	err = utils.RunCommandWithOutput(
-		"docker",
-		[]string{"inspect", "--format", "{{index .RepoDigests 0}}", config.ImagePath},
-		&buf,
-	)
 
+	// Read the digest directly from the file Kaniko created
+	digestFile := filepath.Join(tempDir, "digest.txt")
+	digestBytes, err := os.ReadFile(digestFile)
 	if err != nil {
-		fmt.Println("Failed getting registry digest:", err)
+		fmt.Println("Failed reading digest file from Kaniko:", err)
 		return result
 	}
 
 	// Result looks like: region-docker.pkg.dev/project/repo/name@sha256:abcdef...
-	rawPath := strings.TrimSpace(buf.String())
+	rawPath := strings.TrimSpace(string(digestBytes))
 	parts := strings.Split(rawPath, "@")
 
 	if len(parts) < 2 {
-		fmt.Println("No registry digest found in path")
+		fmt.Println("No registry digest found in Kaniko output")
 		return result
 	}
 
@@ -228,25 +224,22 @@ func ensureArtifactRegistry(ctx context.Context, config *schema.DeploymentConfig
 }
 
 func buildAndPushDockerImage(config *schema.DeploymentConfig, tempDir string, start time.Time) error {
-	dockerRegistry := fmt.Sprintf("%s-docker.pkg.dev", config.Region)
-	if err := utils.RunCommandWithOutput("gcloud", []string{"auth", "configure-docker", dockerRegistry, "--quiet"}, nil); err != nil {
-		return fmt.Errorf("Docker auth configuration failed: %v", err)
+	fmt.Println("Starting native Kaniko build and push...")
+
+	kanikoArgs := []string{
+		"--dockerfile=" + filepath.Join(tempDir, "Dockerfile"),
+		"--destination=" + config.ImagePath,
+		"--context=dir://" + tempDir,
+		"--image-name-with-digest-file=" + filepath.Join(tempDir, "digest.txt"),
 	}
 
-	if err := utils.RunCommandWithOutput("docker", []string{"build", "-t", config.ImagePath, tempDir}, nil); err != nil {
-		return fmt.Errorf("Docker build failed: %v", err)
+	// We execute Kaniko natively! No docker involved.
+	if err := utils.RunCommandWithOutput("/kaniko/executor", kanikoArgs, os.Stdout); err != nil {
+		return fmt.Errorf("Kaniko build/push failed: %v", err)
 	}
 
-	fmt.Println("docker image built!!")
+	fmt.Println("Kaniko successfully built and pushed the image!")
 	fmt.Println(time.Since(start))
-
-	if err := utils.RunCommandWithOutput("docker", []string{"push", config.ImagePath}, nil); err != nil {
-		return fmt.Errorf("Docker push failed: %v", err)
-	}
-
-	fmt.Println("Pushed docker!!")
-	fmt.Println(time.Since(start))
-
 	return nil
 }
 
@@ -375,14 +368,31 @@ func buildEnvVars(env map[string]string) []*runpb.EnvVar {
 }
 
 func configurePublicAccess(config *schema.DeploymentConfig, serviceName string) error {
-	return utils.RunCommandWithOutput("gcloud", []string{
-		"run", "services", "add-iam-policy-binding", serviceName,
-		"--region=" + config.Region,
-		"--project=" + config.ProjectID,
-		"--member=allUsers",
-		"--role=roles/run.invoker",
-		"--quiet",
-	}, nil)
+	ctx := context.Background()
+	client, err := run.NewServicesClient(
+		ctx,
+		option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")),
+	)
+	if err != nil {
+		return fmt.Errorf("run.NewServicesClient: %v", err)
+	}
+	defer client.Close()
+
+	serviceID := fmt.Sprintf("projects/%s/locations/%s/services/%s", config.ProjectID, config.Region, serviceName)
+
+	req := &iampb.SetIamPolicyRequest{
+		Resource: serviceID,
+		Policy: &iampb.Policy{
+			Bindings: []*iampb.Binding{
+				{
+					Role:    "roles/run.invoker",
+					Members: []string{"allUsers"},
+				},
+			},
+		},
+	}
+	_, err = client.SetIamPolicy(ctx, req)
+	return err
 }
 
 func setupWebhook(config *schema.DeploymentConfig, params schema.DeployParams) error {

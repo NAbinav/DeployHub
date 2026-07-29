@@ -77,11 +77,15 @@ func main() {
 	)
 	mux := asynq.NewServeMux()
 	mux.HandleFunc("deploy", HandleWorker)
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		if err := http.ListenAndServe(":8081", nil); err != nil {
+			log.Printf("metrics server error: %v", err)
+		}
+	}()
+
 	if err := srv.Run(mux); err != nil {
 		log.Fatalf("could not run server: %v", err)
 	}
-	go func() {
-		http.Handle("/metrics", promhttp.Handler())
-		http.ListenAndServe(":8081", nil)
-	}()
 }
